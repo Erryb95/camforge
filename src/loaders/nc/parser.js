@@ -8,6 +8,7 @@
 // Tutto ciò che non è supportato genera un avviso con numero di riga: mai un crash.
 
 import { newBounds, dist3 } from '../../core/model.js';
+import { applyTubeUnroll } from '../../core/unroll.js';
 
 // assi (u,v) e offset di centro per ciascun piano di lavoro
 const PLANES = {
@@ -118,6 +119,8 @@ export function parseNC(text, fileName = '') {
     cycle: /** @type {{g:string, z:number|null, r:number|null}|null} */ (null),
     program: /** @type {string|null} */ (null),
     ended: false,
+    rot: /** @type {number|null} */ (null),   // rotazione tubo P (gradi, modale)
+    aux: /** @type {number|null} */ (null),   // carro tubo X_1 (mm, modale)
   };
 
   const warn = (line, msg, once = false) => {
@@ -250,14 +253,40 @@ export function parseNC(text, fileName = '') {
     }
 
     // --- moto normale ---
-    if (!hasCoord && !hasArcData) continue;      // riga senza geometria (solo F/S/T/M/param…)
-    if (st.motion === null && !oneShotRapid) {
+    // dialetto tubo: P = rotazione tubo, X_1 = carro (solo con header tubo presente)
+    const tubeDialect = meta.tubeLength !== undefined || meta.tubeWidth !== undefined
+      || meta.tubeDiameter !== undefined;
+    const rotWord = tubeDialect ? w.P : undefined;
+    const auxWord = tubeDialect && params.X_1 != null ? params.X_1 : undefined;
+    // P è espresso modulo 360: la macchina prende la via corta (0→357 = -3°,
+    // non +357°). Riporta il nuovo valore sul giro più vicino a quello attuale.
+    let rotNew;
+    if (rotWord !== undefined) {
+      rotNew = st.rot === null ? rotWord
+        : rotWord + 360 * Math.round((st.rot - rotWord) / 360);
+    }
+    const auxChanges = auxWord !== undefined && st.aux !== null && Math.abs(auxWord - st.aux) > 1e-9;
+
+    if (!hasCoord && !hasArcData) {
+      // solo avanzamento carro X_1: trasla u nello sviluppo (geometria reale);
+      // la sola rotazione P non muove il punto di taglio (coordinate nel sistema pezzo)
+      const pureCarriage = auxChanges && (st.motion !== null || oneShotRapid);
+      if (!pureCarriage) {
+        if (rotNew !== undefined) st.rot = rotNew;
+        if (auxWord !== undefined) st.aux = auxWord;
+        continue;      // riga senza geometria (solo F/S/T/M/param…)
+      }
+    } else if (st.motion === null && !oneShotRapid) {
       warn(ln, 'Coordinate senza modo di moto attivo (manca G0/G1/G2/G3): riga ignorata');
       continue;
     }
 
     const from = { ...st.pos };
     const fromSet = { ...st.axisSet };
+    const rot0 = st.rot, aux0 = st.aux;
+    const rot1 = rotNew !== undefined ? rotNew : rot0;
+    const aux1 = auxWord !== undefined ? auxWord : aux0;
+    st.rot = rot1; st.aux = aux1;
     const to = {
       x: w.X !== undefined ? (st.abs ? mm(w.X) : from.x + mm(w.X)) : from.x,
       y: w.Y !== undefined ? (st.abs ? mm(w.Y) : from.y + mm(w.Y)) : from.y,
@@ -274,10 +303,11 @@ export function parseNC(text, fileName = '') {
     if (oneShotRapid || st.motion === 0 || st.motion === 1 || sawG28) {
       const type = !oneShotRapid && st.motion === 1 && !sawG28 ? 'feed' : 'rapid';
       const len = dist3(from, to);
-      if (len > 1e-9) {
+      if (len > 1e-9 || auxChanges) {
         segments.push({
           type, from, to, pts: [from, to], line: ln, tool: useTool(),
           feed: type === 'feed' ? st.feed : null, len, implicit,
+          rot0, rot1, aux0, aux1,
         });
       }
       st.pos = to;
@@ -289,6 +319,7 @@ export function parseNC(text, fileName = '') {
     if (arc) {
       arc.tool = useTool();
       arc.implicit = implicit;
+      arc.rot0 = rot0; arc.rot1 = rot1; arc.aux0 = aux0; arc.aux1 = aux1;
       segments.push(arc);
     } else {
       // fallback: traccia una linea per non perdere il percorso
@@ -297,11 +328,16 @@ export function parseNC(text, fileName = '') {
         segments.push({
           type: 'feed', from, to, pts: [from, to], line: ln,
           tool: useTool(), feed: st.feed, len, implicit,
+          rot0, rot1, aux0, aux1,
         });
       }
     }
     st.pos = to;
   }
+
+  // sviluppo tubo (se il file ha l'header tubo): calcola seg.uv e corregge
+  // la lunghezza dei moti di sola rotazione prima delle statistiche
+  applyTubeUnroll(segments, meta);
 
   // --- statistiche e bounds ---
   const all = newBounds();

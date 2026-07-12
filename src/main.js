@@ -17,8 +17,9 @@ let lineToSegs = new Map();
 const viewer = createViewer(/** @type {HTMLCanvasElement} */ ($('canvas')), {
   onHover(seg, world) {
     codePanel.setActive(seg ? seg.line : -1);
+    const lab = viewer.getAxisLabels();
     $('sbCoords').textContent = world
-      ? `${viewer.getView()[0]} ${world[0].toFixed(3)}   ${viewer.getView()[1]} ${world[1].toFixed(3)}`
+      ? `${lab[0]} ${world[0].toFixed(3)}   ${lab[1]} ${world[1].toFixed(3)}`
       : '—';
   },
   onPick(seg) {
@@ -70,6 +71,12 @@ function loadText(fileName, text) {
     stopAnim(true);
     hideSegTip();
 
+    // vista svolta: disponibile (e attivata) solo per i file tubo
+    const dev = !!(model.meta && model.meta.unrollAvailable);
+    $('btnDev').hidden = !dev;
+    if (dev) setViewUI('DEV');
+    else if (viewer.getView() === 'DEV') setViewUI('XY');
+
     $('dropHint').classList.add('hidden');
     $('sbFile').textContent = fileName;
     $('sbCount').textContent = `${model.segments.length} segmenti · ${model.drillPoints.length} fori`;
@@ -98,6 +105,11 @@ function showSegTip(seg) {
   if (seg.radius) txt += ` · R ${seg.radius.toFixed(2)}`;
   if (seg.feed) txt += ` · F ${seg.feed.toFixed(0)}`;
   if (seg.tool) txt += ` · T${seg.tool}`;
+  if (seg.rot1 !== undefined && seg.rot1 !== null) {
+    txt += seg.rot0 !== null && seg.rot0 !== undefined && Math.abs(seg.rot1 - seg.rot0) > 1e-9
+      ? ` · P ${seg.rot0.toFixed(1)}→${seg.rot1.toFixed(1)}°`
+      : ` · P ${seg.rot1.toFixed(1)}°`;
+  }
   const tip = $('segTip');
   tip.innerHTML = `${txt}<span class="close" title="Chiudi">✕</span>`;
   tip.hidden = false;
@@ -175,13 +187,15 @@ $('btnFit').addEventListener('click', () => viewer.fit());
 $('chkRapids').addEventListener('change', (e) => viewer.setShowRapids(/** @type {HTMLInputElement} */(e.target).checked));
 $('chkPoints').addEventListener('change', (e) => viewer.setShowPoints(/** @type {HTMLInputElement} */(e.target).checked));
 
-document.querySelectorAll('#viewBtns button').forEach((b) => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('#viewBtns button').forEach((x) => x.classList.remove('active'));
-    b.classList.add('active');
-    viewer.setView(/** @type {HTMLElement} */(b).dataset.v);
-    updateZoomLabel();
+function setViewUI(v) {
+  viewer.setView(v);
+  document.querySelectorAll('#viewBtns button').forEach((x) => {
+    x.classList.toggle('active', /** @type {HTMLElement} */(x).dataset.v === v);
   });
+  updateZoomLabel();
+}
+document.querySelectorAll('#viewBtns button').forEach((b) => {
+  b.addEventListener('click', () => setViewUI(/** @type {HTMLElement} */(b).dataset.v));
 });
 
 for (const [btn, panel] of [['btnCode', 'codePanel'], ['btnInfo', 'infoPanel']]) {

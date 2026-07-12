@@ -8,7 +8,8 @@ estendersi a DXF, DWG e STEP tramite loader modulari.
 | Azione | Comando |
 |---|---|
 | Avvio server locale | `node server.mjs` → http://localhost:8123 |
-| Test parser | `node --test tests/` |
+| Test parser | `node --test "tests/*.test.mjs"` |
+| Snapshot PNG headless | `node tools/render-snapshot.mjs <file> <out.png> [DEV\|XY\|XZ\|YZ] [w] [h]` |
 
 Non c'è build: l'app è HTML + moduli ES nativi, si ricarica il browser e basta.
 
@@ -28,6 +29,7 @@ server.mjs            server statico zero-dep (porta 8123)
 src/
   core/model.js       SceneModel COMUNE: Segment, DrillPoint, Bounds, stats
   core/registry.js    estensione file → loader (con fallback)
+  core/unroll.js      sviluppo "tubo svolto": perimetro sezione, unwrap, guide
   loaders/nc/         parser G-code + dialetto laser tubo → SceneModel  [fase 1 ✓]
   loaders/alma/       AlmaCAM XML .cn/.ctd (polilinee 3D)               [fase 1 ✓]
   loaders/dxf/        [fase 2 - da fare, dxf-parser vendorizzato]
@@ -38,6 +40,7 @@ src/
   ui/statsPanel.js    ingombri, lunghezze, utensili (toggle), avvisi
 samples/demo.nc       programma dimostrativo (caricato all'avvio)
 tests/                golden test del parser (node:test, zero dipendenze)
+tools/render-snapshot.mjs  render PNG headless (verifica visiva senza browser)
 ```
 
 **Regola d'oro**: i loader producono SOLO uno `SceneModel`; il renderer consuma
@@ -54,9 +57,23 @@ gli avvisi sono il punto di partenza per estendere il parser sui file reali del 
 **Dialetto laser tubo (file .nc del cliente, stile Adige/BLM)**: header `LT<>`
 `DM<>` `WW<>/WH<>` → metadati tubo nel pannello Info · `KG10` = rapido one-shot ·
 parametri macchina multi-lettera (ZX, KA, EP…) ignorati senza avvisi · assi
-ausiliari `X_1=` · direttive `!...!` e righe `--LN/--GOTOLN` saltate ·
-`P` (rotazione tubo) parsato ma non ancora usato per la geometria.
-Idea fase 1.5: vista "tubo svolto" usando P × circonferenza.
+ausiliari `X_1=` · direttive `!...!` e righe `--LN/--GOTOLN` saltate.
+
+## Vista "Svolto" (tubo sviluppato in piano)
+
+Attiva automaticamente per i file con dati tubo. u = `X_1` (carro, modale) + `X`;
+v = ascissa perimetrale di `(Y, Z)` sulla sezione (v=0 centro faccia superiore).
+**Fatti verificati sui file reali — non reinterpretarli:**
+- Y/Z sono GIÀ nel sistema pezzo (nella troncatura `(Y,Z)` percorre esattamente
+  il perimetro della sezione). `P` è solo cinematica macchina: riapplicarla
+  alla geometria RADDOPPIA lo sviluppo (bug già commesso e corretto).
+- `P` è modulo 360 nel programma: il parser lo riporta sul giro più vicino
+  (0→357 = −3°). Registrato su `seg.rot0/rot1` solo per il tooltip.
+- L'unwrap perimetrale si azzera a ogni rapido (NC) / nuova curva (AlmaCAM),
+  altrimenti i giri completi dei contorni successivi si accumulano.
+- Una troncatura corretta spazza ~1 perimetro (196 mm per il 73×25): i test
+  reali lo verificano come regressione.
+AlmaCAM: sezione tonda/rettangolare autorilevata dai raggi dei punti.
 
 Fuori scope (avvisato): compensazione raggio G41/G42, origini G54–G59,
 sottoprogrammi M98/M99, macro `#`. I `.pgm` (altro controllo, con espressioni

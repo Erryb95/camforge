@@ -19,6 +19,11 @@
  * @property {number} [radius] solo archi
  * @property {string} [plane]  solo archi: XY | ZX | YZ
  * @property {boolean} [implicit] partenza da posizione mai impostata (non affidabile)
+ * @property {{u:number, v:number}[]} [uv] sviluppo tubo: u assiale, v perimetrale (vista "Svolto")
+ * @property {number|null} [rot0]  rotazione tubo P a inizio segmento (gradi)
+ * @property {number|null} [rot1]  rotazione tubo P a fine segmento (gradi)
+ * @property {number|null} [aux0]  posizione carro X_1 a inizio segmento (mm)
+ * @property {number|null} [aux1]  posizione carro X_1 a fine segmento (mm)
  *
  * @typedef {Object} DrillPoint
  * @property {P3} at

@@ -11,10 +11,12 @@ const RAPID_COLOR = '#8a5560';
 const DIM_ALPHA = 0.18;
 
 // proiezioni di vista (indipendenti dal piano degli archi)
+// DEV = "tubo svolto": usa seg.uv precalcolato dai loader (u assiale, v perimetro)
 const VIEWS = {
   XY: { u: (p) => p.x, v: (p) => p.y, labels: ['X', 'Y'] },
   XZ: { u: (p) => p.x, v: (p) => p.z, labels: ['X', 'Z'] },
   YZ: { u: (p) => p.y, v: (p) => p.z, labels: ['Y', 'Z'] },
+  DEV: { u: null, v: null, labels: ['L', 'C'] },
 };
 
 /**
@@ -73,10 +75,20 @@ export function createViewer(canvas, cb = {}) {
     if (!state.model) return;
     const V = VIEWS[state.view];
     for (const seg of state.model.segments) {
-      const pts = new Float64Array(seg.pts.length * 2);
-      for (let i = 0; i < seg.pts.length; i++) {
-        pts[i * 2] = V.u(seg.pts[i]);
-        pts[i * 2 + 1] = V.v(seg.pts[i]);
+      let pts;
+      if (state.view === 'DEV') {
+        if (!seg.uv) continue;   // segmento senza sviluppo
+        pts = new Float64Array(seg.uv.length * 2);
+        for (let i = 0; i < seg.uv.length; i++) {
+          pts[i * 2] = seg.uv[i].u;
+          pts[i * 2 + 1] = seg.uv[i].v;
+        }
+      } else {
+        pts = new Float64Array(seg.pts.length * 2);
+        for (let i = 0; i < seg.pts.length; i++) {
+          pts[i * 2] = V.u(seg.pts[i]);
+          pts[i * 2 + 1] = V.v(seg.pts[i]);
+        }
       }
       state.proj.push({ seg, pts });
       state.total += seg.len;
@@ -217,9 +229,16 @@ export function createViewer(canvas, cb = {}) {
       const V = VIEWS[state.view];
       for (const d of state.model.drillPoints) {
         if (state.hiddenTools.has(d.tool)) continue;
+        let du, dv;
+        if (state.view === 'DEV') {
+          if (!d.uv) continue;
+          du = d.uv.u; dv = d.uv.v;
+        } else {
+          du = V.u(d.at); dv = V.v(d.at);
+        }
         if (animating && state.cum[Math.min(d.afterSeg, state.cum.length) - 1] > state.progress
             && d.afterSeg > 0) ctx.globalAlpha = DIM_ALPHA;
-        const [sx, sy] = toScreen(V.u(d.at), V.v(d.at));
+        const [sx, sy] = toScreen(du, dv);
         ctx.strokeStyle = toolColor(d.tool);
         ctx.lineWidth = 1.2;
         ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.stroke();
@@ -291,10 +310,26 @@ export function createViewer(canvas, cb = {}) {
     return lo;
   }
 
+  // bordi facce / quadranti nella vista svolta
+  function drawGuides() {
+    if (state.view !== 'DEV' || !state.model || !state.model.meta
+        || !state.model.meta.unrollGuides) return;
+    ctx.strokeStyle = '#2e4160';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 6]);
+    for (const v of state.model.meta.unrollGuides) {
+      const [, sy] = toScreen(0, v);
+      if (sy < -5 || sy > h + 5) continue;
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     drawGrid();
+    drawGuides();
     drawModel();
   }
 
@@ -432,6 +467,7 @@ export function createViewer(canvas, cb = {}) {
     setProgress(len) { state.progress = len; draw(); },
     getTotal() { return state.total; },
     getView() { return state.view; },
+    getAxisLabels() { return VIEWS[state.view].labels; },
     getZoom() { return state.scale; },
     redraw: draw,
   };
