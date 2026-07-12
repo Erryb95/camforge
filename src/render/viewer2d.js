@@ -37,6 +37,7 @@ export function createViewer(canvas, cb = {}) {
     pitch: 0.5,                // elevazione orbita 3D (rad)
     showRapids: true,
     showPoints: true,
+    solid: true,               // vista 3D: solido ombreggiato (true) o solo filo (false)
     hiddenTools: new Set(),
     selected: /** @type {any} */ (null),
     hovered: /** @type {any} */ (null),
@@ -80,6 +81,13 @@ export function createViewer(canvas, cb = {}) {
       p.x * sa - p.y * ca,
       -p.x * se * ca - p.y * se * sa + p.z * ce,
     ];
+  }
+
+  // versore verso la camera (per profondità painter's e illuminazione)
+  function viewDir() {
+    const sa = Math.sin(state.yaw), ca = Math.cos(state.yaw);
+    const se = Math.sin(state.pitch), ce = Math.cos(state.pitch);
+    return [ce * ca, ce * sa, se];
   }
 
   // ---------- cache proiezione ----------
@@ -169,6 +177,56 @@ export function createViewer(canvas, cb = {}) {
     }
   }
 
+  // rendering solido ombreggiato della mesh (vista 3D)
+  let triOrder = null, triOrderKey = '';
+  function drawSolidMesh() {
+    const mesh = state.model && state.model.mesh;
+    if (!mesh) return;
+    const P = mesh.positions, I = mesh.indices, TT = mesh.triTool;
+    const nTri = I.length / 3;
+    const [dx, dy, dz] = viewDir();
+
+    // ordine painter's: ricalcola solo se l'orbita è cambiata sensibilmente
+    const okey = `${Math.round(state.yaw * 20)},${Math.round(state.pitch * 20)}`;
+    if (!triOrder || triOrder.length !== nTri || triOrderKey !== okey) {
+      triOrder = new Int32Array(nTri);
+      const depth = new Float64Array(nTri);
+      for (let t = 0; t < nTri; t++) {
+        const a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+        const cxp = (P[a] + P[b] + P[c]) / 3, cyp = (P[a + 1] + P[b + 1] + P[c + 1]) / 3, czp = (P[a + 2] + P[b + 2] + P[c + 2]) / 3;
+        depth[t] = cxp * dx + cyp * dy + czp * dz;
+        triOrder[t] = t;
+      }
+      triOrder.sort((s, t) => depth[s] - depth[t]);   // lontano → vicino
+      triOrderKey = okey;
+    }
+
+    // luce da davanti-alto
+    let lx = dx, ly = dy, lz = dz + 0.65;
+    const ll = Math.hypot(lx, ly, lz) || 1; lx /= ll; ly /= ll; lz /= ll;
+
+    for (let oi = 0; oi < nTri; oi++) {
+      const t = triOrder[oi];
+      const a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+      // normale
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+      const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const diff = Math.abs(nx * lx + ny * ly + nz * lz);   // illuminazione a due facce
+      const shade = 0.32 + 0.68 * diff;
+
+      const [r, g, bl] = toolRGB(TT ? TT[t] : 1);
+      ctx.fillStyle = `rgb(${(r * shade) | 0},${(g * shade) | 0},${(bl * shade) | 0})`;
+      const [x0, y0] = toScreen(...project3d({ x: P[a], y: P[a + 1], z: P[a + 2] }));
+      const [x1, y1] = toScreen(...project3d({ x: P[b], y: P[b + 1], z: P[b + 2] }));
+      const [x2, y2] = toScreen(...project3d({ x: P[c], y: P[c + 1], z: P[c + 2] }));
+      ctx.beginPath();
+      ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.closePath();
+      ctx.fill();
+    }
+  }
+
   function drawGrid() {
     const step = niceStep(70 / state.scale);
     const [u0, v1] = toWorld(0, 0);
@@ -245,6 +303,10 @@ export function createViewer(canvas, cb = {}) {
     if (!state.model) return TOOL_COLORS[0];
     const idx = state.model.stats.tools.indexOf(tool);
     return TOOL_COLORS[(idx < 0 ? 0 : idx) % TOOL_COLORS.length];
+  }
+  function toolRGB(tool) {
+    const hex = toolColor(tool);
+    return [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
   }
 
   function drawModel() {
@@ -390,11 +452,20 @@ export function createViewer(canvas, cb = {}) {
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    if (state.view === '3D') draw3dScene();
-    else drawGrid();
+    if (state.view === '3D') {
+      draw3dScene();
+      if (state.solid && state.model && state.model.mesh) drawSolidMesh();
+    } else {
+      drawGrid();
+    }
     drawGuides();
+    // in modo Solido con mesh, gli spigoli restano come rifinitura sottile;
+    // il percorso/segmenti si disegna sempre (contorni di taglio, wireframe)
     drawModel();
   }
+
+  // true se ha senso proporre il toggle Solido/Filo (c'è una mesh e siamo in 3D)
+  function hasSolid() { return state.view === '3D' && state.model && !!state.model.mesh; }
 
   // ---------- hit-test ----------
   function pick(sx, sy) {
@@ -536,6 +607,9 @@ export function createViewer(canvas, cb = {}) {
     },
     setShowRapids(b) { state.showRapids = b; draw(); },
     setShowPoints(b) { state.showPoints = b; draw(); },
+    setSolid(b) { state.solid = b; draw(); },
+    getSolid() { return state.solid; },
+    hasMesh() { return !!(state.model && state.model.mesh); },
     setHiddenTools(set) { state.hiddenTools = set; draw(); },
     setSelected(seg) { state.selected = seg; draw(); },
     /** @param {number|null} len lunghezza percorsa in mm (null = percorso completo) */

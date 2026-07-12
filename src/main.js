@@ -87,7 +87,7 @@ async function loadText(fileName, text) {
     // scelta vista iniziale in base al contenuto:
     //  tubo → Svolto · STEP/3D → orbita 3D · altrimenti XY
     const dev = !!(model.meta && model.meta.unrollAvailable);
-    const is3d = !!(model.meta && (model.meta.dialect === 'STEP' || model.meta.dialect === 'DWG3D'));
+    const is3d = !!(model.meta && (['STEP', 'IGES', 'BREP', 'DWG3D'].includes(model.meta.dialect) || model.mesh));
     $('btnDev').hidden = !dev;
     setViewUI(dev ? 'DEV' : is3d ? '3D' : 'XY');
 
@@ -209,8 +209,17 @@ function setViewUI(v) {
   document.querySelectorAll('#viewBtns button').forEach((x) => {
     x.classList.toggle('active', /** @type {HTMLElement} */(x).dataset.v === v);
   });
+  // toggle Solido/Filo: solo in 3D e se il modello ha una mesh solida
+  $('btnSolid').hidden = !(v === '3D' && viewer.hasMesh());
   updateZoomLabel();
 }
+
+$('btnSolid').addEventListener('click', () => {
+  const on = !viewer.getSolid();
+  viewer.setSolid(on);
+  $('btnSolid').classList.toggle('active', on);
+  $('btnSolid').innerHTML = on ? '&#9632; Solido' : '&#9633; Filo';
+});
 document.querySelectorAll('#viewBtns button').forEach((b) => {
   b.addEventListener('click', () => setViewUI(/** @type {HTMLElement} */(b).dataset.v));
 });

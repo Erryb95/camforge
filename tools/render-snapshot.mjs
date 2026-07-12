@@ -99,9 +99,54 @@ if (view === 'DEV' && model.meta && model.meta.unrollGuides) {
     if (y >= 0 && y < h) line(0, y, w - 1, y, 0x2e, 0x41, 0x60, true);
   }
 }
+// --- solido ombreggiato (vista 3D, SOLID=1) ---
+if (view === '3D' && model.mesh && process.env.SOLID) {
+  const P = model.mesh.positions, I = model.mesh.indices;
+  const nTri = I.length / 3;
+  const [dx, dy, dz] = [Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)];
+  let lx = dx, ly = dy, lz = dz + 0.65; const ll = Math.hypot(lx, ly, lz); lx /= ll; ly /= ll; lz /= ll;
+  const order = [...Array(nTri).keys()].sort((s, t) => {
+    const cd = (k) => { const a = I[k * 3] * 3, b = I[k * 3 + 1] * 3, c = I[k * 3 + 2] * 3;
+      return ((P[a] + P[b] + P[c]) * dx + (P[a + 1] + P[b + 1] + P[c + 1]) * dy + (P[a + 2] + P[b + 2] + P[c + 2]) * dz) / 3; };
+    return cd(s) - cd(t);
+  });
+  const fillTri = (ax, ay, bx, by, cxp, cyp, r, g, b) => {
+    const minY = Math.max(0, Math.floor(Math.min(ay, by, cyp)));
+    const maxY = Math.min(h - 1, Math.ceil(Math.max(ay, by, cyp)));
+    const area = (bx - ax) * (cyp - ay) - (cxp - ax) * (by - ay);
+    if (Math.abs(area) < 1e-6) return;
+    for (let y = minY; y <= maxY; y++) {
+      const minX = Math.max(0, Math.floor(Math.min(ax, bx, cxp)));
+      const maxX = Math.min(w - 1, Math.ceil(Math.max(ax, bx, cxp)));
+      for (let x = minX; x <= maxX; x++) {
+        const w0 = ((bx - ax) * (y + 0.5 - ay) - (by - ay) * (x + 0.5 - ax)) / area;
+        const w1 = ((cxp - bx) * (y + 0.5 - by) - (cyp - by) * (x + 0.5 - bx)) / area;
+        const w2 = ((ax - cxp) * (y + 0.5 - cyp) - (ay - cyp) * (x + 0.5 - cxp)) / area;
+        if (w0 >= 0 && w1 >= 0 && w2 >= 0) put(x, y, r, g, b);
+      }
+    }
+  };
+  for (const t of order) {
+    const a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+    const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    const sh = 0.32 + 0.68 * Math.abs(nx * lx + ny * ly + nz * lz);
+    const [pa, pb, pc] = [[P[a], P[a + 1], P[a + 2]], [P[b], P[b + 1], P[b + 2]], [P[c], P[c + 1], P[c + 2]]];
+    const [ua, va] = p3d({ x: pa[0], y: pa[1], z: pa[2] });
+    const [ub, vb] = p3d({ x: pb[0], y: pb[1], z: pb[2] });
+    const [uc, vc] = p3d({ x: pc[0], y: pc[1], z: pc[2] });
+    fillTri(sx(ua), sy(va), sx(ub), sy(vb), sx(uc), sy(vc),
+      (0x4c * sh) | 0, (0xc9 * sh) | 0, (0xf0 * sh) | 0);
+  }
+}
+
 // assi u=0 / v=0
-line(sx(0), 0, sx(0), h - 1, 0x26, 0x2e, 0x3b);
-line(0, sy(0), w - 1, sy(0), 0x26, 0x2e, 0x3b);
+if (view !== '3D' || !process.env.SOLID) {
+  line(sx(0), 0, sx(0), h - 1, 0x26, 0x2e, 0x3b);
+  line(0, sy(0), w - 1, sy(0), 0x26, 0x2e, 0x3b);
+}
 
 for (const p of polys) {
   const rapid = p.type === 'rapid';

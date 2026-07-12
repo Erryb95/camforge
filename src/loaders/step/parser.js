@@ -6,6 +6,7 @@
 // Il parse è ASINCRONO: il registry/main gestiscono il Promise.
 
 import { newBounds, dist3 } from '../../core/model.js';
+import { sequenceSegments } from '../cad/sequence.js';
 
 const DIHEDRAL_DEG = 25;           // sopra questo angolo lo spigolo si vede
 const VERT_PRECISION = 1000;       // dedup vertici a 1/1000 mm
@@ -115,14 +116,17 @@ function featureEdges(pos, index, verts) {
 }
 
 /**
- * @param {string} text
+ * @param {string|Uint8Array} content
  * @param {string} [fileName]
  * @returns {Promise<import('../../core/model.js').SceneModel>}
  */
-export async function parseStep(text, fileName = '') {
+export async function parseStep(content, fileName = '') {
   const occt = await getOcct();
-  const buffer = new TextEncoder().encode(text);
-  const result = occt.ReadStepFile(buffer, null);
+  const buffer = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  const fmt = ext === 'igs' || ext === 'iges' ? 'IGES' : ext === 'brep' ? 'BREP' : 'STEP';
+  const read = fmt === 'IGES' ? occt.ReadIgesFile : fmt === 'BREP' ? occt.ReadBrepFile : occt.ReadStepFile;
+  const result = read.call(occt, buffer, null);
 
   /** @type {import('../../core/model.js').Segment[]} */
   const segments = [];
@@ -135,8 +139,13 @@ export async function parseStep(text, fileName = '') {
   /** @type {number[]} */
   const toolsSeen = [];
 
+  // mesh solida accumulata (per il rendering "Solido"): vertici + triangoli + utensile per faccia
+  /** @type {number[]} */ const meshPos = [];
+  /** @type {number[]} */ const meshIdx = [];
+  /** @type {number[]} */ const meshTri = [];   // utensile per triangolo
+
   if (!result || !result.success) {
-    warnings.push({ line: 1, msg: 'OpenCascade non è riuscito a leggere il file STEP' });
+    warnings.push({ line: 1, msg: `OpenCascade non è riuscito a leggere il file ${fmt}` });
   }
 
   const meshes = (result && result.meshes) || [];
@@ -152,29 +161,42 @@ export async function parseStep(text, fileName = '') {
       listing.push(`Solido ${tool} — ${name}: senza mesh`);
       return;
     }
+    // accumula la mesh solida (offset dei vertici)
+    const base = meshPos.length / 3;
+    for (let i = 0; i < pos.length; i++) meshPos.push(pos[i]);
+    for (let i = 0; i < idx.length; i += 3) {
+      meshIdx.push(base + idx[i], base + idx[i + 1], base + idx[i + 2]);
+      meshTri.push(tool);
+    }
+    // spigoli caratteristici (filiforme), concatenati e ordinati per solido
     /** @type {number[][]} */
     const verts = [];
     const edges = featureEdges(pos, idx, verts);
     listing.push(`Solido ${tool} — ${name} · ${Math.round(idx.length / 3)} triangoli · ${edges.length} spigoli`);
+    /** @type {import('../../core/model.js').Segment[]} */
+    const solidSegs = [];
     for (const { a, b } of edges) {
       const from = { x: verts[a][0], y: verts[a][1], z: verts[a][2] };
       const to = { x: verts[b][0], y: verts[b][1], z: verts[b][2] };
       const len = dist3(from, to);
       if (len < 1e-9) continue;
-      segments.push({
-        type: 'feed', from, to, pts: [from, to],
-        line: mi + 1, tool, feed: null, len,
-      });
+      solidSegs.push({ type: 'feed', from, to, pts: [from, to], line: tool, tool, feed: null, len });
     }
+    // sequenza di taglio ordinata (da un'estremità, poi per prossimità)
+    for (const s of sequenceSegments(solidSegs)) segments.push(s);
   });
 
   if (meshes.length === 0 && result && result.success) {
-    warnings.push({ line: 1, msg: 'Il file STEP non contiene solidi tessellabili' });
+    warnings.push({ line: 1, msg: `Il file ${fmt} non contiene solidi tessellabili` });
   }
 
   const all = newBounds();
   let feedLen = 0;
   for (const s of segments) { all.add(s.from); all.add(s.to); feedLen += s.len; }
+
+  const mesh = meshIdx.length
+    ? { positions: new Float64Array(meshPos), indices: new Uint32Array(meshIdx), triTool: new Uint32Array(meshTri) }
+    : null;
 
   return {
     name: fileName,
@@ -184,8 +206,9 @@ export async function parseStep(text, fileName = '') {
     drillPoints: [],
     warnings,
     rawLines: listing.length ? listing : ['(nessun solido)'],
-    meta: { dialect: 'STEP', solidi: meshes.length },
+    meta: { dialect: fmt === 'STEP' ? 'STEP' : fmt, solidi: meshes.length },
     toolNames,
+    mesh,
     bounds: all.result(),
     boundsFeed: all.result(),
     stats: { feedLen, rapidLen: 0, timeMin: null, tools: toolsSeen },

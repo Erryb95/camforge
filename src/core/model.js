@@ -47,6 +47,7 @@
  * @property {Bounds|null} bounds      ingombro di tutte le corse
  * @property {Bounds|null} boundsFeed  ingombro del solo percorso in lavoro
  * @property {Record<number, string>} [toolNames]  etichette (es. layer DXF) per gli "utensili"
+ * @property {{positions:Float64Array, indices:Uint32Array, triTool:Uint32Array}|null} [mesh]  mesh solida per il rendering "Solido" (STEP/IGES/tubo)
  * @property {{feedLen:number, rapidLen:number, timeMin:number|null, tools:number[]}} stats
  */
 
