@@ -71,9 +71,16 @@ function featureEdges(pos, index, verts) {
     remap.push(id);
   }
 
-  // triangoli + normali
+  // triangoli: normali + baricentri + bounding box (per l'asse del pezzo)
   const nTri = index.length / 3;
   const normals = new Float64Array(nTri * 3);
+  const cent = new Float64Array(nTri * 3);
+  const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+  for (const [x, y, z] of verts) {
+    if (x < mn[0]) mn[0] = x; if (x > mx[0]) mx[0] = x;
+    if (y < mn[1]) mn[1] = y; if (y > mx[1]) mx[1] = y;
+    if (z < mn[2]) mn[2] = z; if (z > mx[2]) mx[2] = z;
+  }
   /** @type {Map<string, {tris:number[]}>} */
   const edges = new Map();
   const addEdge = (a, b, t) => {
@@ -91,7 +98,50 @@ function featureEdges(pos, index, verts) {
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const l = Math.hypot(nx, ny, nz) || 1;
     normals[t * 3] = nx / l; normals[t * 3 + 1] = ny / l; normals[t * 3 + 2] = nz / l;
+    cent[t * 3] = (ax + bx + cx) / 3; cent[t * 3 + 1] = (ay + by + cy) / 3; cent[t * 3 + 2] = (az + bz + cz) / 3;
     addEdge(a, b, t); addEdge(b, c, t); addEdge(c, a, t);
+  }
+
+  // Asse principale REALE del pezzo = componente principale (PCA) della nuvola
+  // di vertici: il tubo/profilo è lungo lungo quell'asse, comunque orientato
+  // nello spazio (i pezzi NON sono allineati agli assi mondo). Sulla superficie
+  // ESTERNA la normale (occt orientata verso l'esterno) punta radialmente in
+  // fuori dall'asse (o lungo l'asse per le facce di testa). Le facce INTERNE
+  // (parete interna, pareti dei fori) puntano verso l'asse: i loro spigoli sono
+  // i duplicati "interni" del taglio e vanno scartati — il laser incide solo
+  // la faccia esterna del pezzo.
+  const ap = [0, 0, 0];
+  for (const v of verts) { ap[0] += v[0]; ap[1] += v[1]; ap[2] += v[2]; }
+  ap[0] /= verts.length; ap[1] /= verts.length; ap[2] /= verts.length;
+  // matrice di covarianza (simmetrica)
+  let cxx = 0, cyy = 0, czz = 0, cxy = 0, cxz = 0, cyz = 0;
+  for (const v of verts) {
+    const dx = v[0] - ap[0], dy = v[1] - ap[1], dz = v[2] - ap[2];
+    cxx += dx * dx; cyy += dy * dy; czz += dz * dz;
+    cxy += dx * dy; cxz += dx * dz; cyz += dy * dz;
+  }
+  // autovettore dominante via power iteration
+  let axis = [1, 0, 0];
+  for (let it = 0; it < 40; it++) {
+    const nx = cxx * axis[0] + cxy * axis[1] + cxz * axis[2];
+    const ny = cxy * axis[0] + cyy * axis[1] + cyz * axis[2];
+    const nz = cxz * axis[0] + cyz * axis[1] + czz * axis[2];
+    const l = Math.hypot(nx, ny, nz) || 1;
+    axis = [nx / l, ny / l, nz / l];
+  }
+
+  const outer = new Uint8Array(nTri);
+  for (let t = 0; t < nTri; t++) {
+    const dx = cent[t * 3] - ap[0], dy = cent[t * 3 + 1] - ap[1], dz = cent[t * 3 + 2] - ap[2];
+    const along = dx * axis[0] + dy * axis[1] + dz * axis[2];
+    let rx = dx - along * axis[0], ry = dy - along * axis[1], rz = dz - along * axis[2];
+    const rlen = Math.hypot(rx, ry, rz) || 1;
+    rx /= rlen; ry /= rlen; rz /= rlen;
+    const nRad = normals[t * 3] * rx + normals[t * 3 + 1] * ry + normals[t * 3 + 2] * rz;
+    // esterna se la normale punta radialmente in FUORI dall'asse. Le facce di
+    // testa (normale assiale) restano "interne", ma il rim esterno di testa
+    // viene comunque tenuto tramite la parete esterna adiacente.
+    outer[t] = nRad > 0.15 ? 1 : 0;
   }
 
   const cosThr = Math.cos((DIHEDRAL_DEG * Math.PI) / 180);
@@ -99,13 +149,14 @@ function featureEdges(pos, index, verts) {
   const out = [];
   for (const [key, e] of edges) {
     let keep = false;
-    if (e.tris.length === 1) keep = true;              // bordo libero
+    if (e.tris.length === 1) keep = outer[e.tris[0]] === 1;        // bordo libero, solo se esterno
     else if (e.tris.length >= 2) {
       const t0 = e.tris[0], t1 = e.tris[1];
       const dot = normals[t0 * 3] * normals[t1 * 3]
         + normals[t0 * 3 + 1] * normals[t1 * 3 + 1]
         + normals[t0 * 3 + 2] * normals[t1 * 3 + 2];
-      if (dot < cosThr) keep = true;                   // spigolo vivo
+      // spigolo vivo E almeno una faccia adiacente sulla superficie esterna
+      if (dot < cosThr && (outer[t0] === 1 || outer[t1] === 1)) keep = true;
     }
     if (keep) {
       const [a, b] = key.split('_').map(Number);
