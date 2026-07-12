@@ -140,6 +140,11 @@ export function parseNC(text, fileName = '') {
     const ln = li + 1;
     let line = rawLines[li];
 
+    // dialetto .pgm/.cn: argomenti parametrici LETTERA(espr) — es. F(feed1),
+    // X(kine_x), Z(optimized_lift), S(workpiece_safe_dist) — sono parametri
+    // macro, non geometria: rimuovili (indirizzo incluso) prima dei commenti.
+    // Il lookbehind evita di intaccare parole come JMPF(...) (F di JMPF).
+    line = line.replace(/(?<![A-Za-z])[A-Za-z]\([^)]*\)/g, ' ');
     // commenti tra parentesi e da ';' a fine riga
     line = line.replace(/\([^)]*\)/g, ' ');
     if (line.includes('(')) { warn(ln, 'Commento "(" non chiuso'); line = line.slice(0, line.indexOf('(')); }
@@ -155,7 +160,6 @@ export function parseNC(text, fileName = '') {
     }
 
     const { words, params, junk } = tokenize(line);
-    if (junk) warn(ln, `Testo non riconosciuto: "${junk.slice(0, 24)}"`, true);
 
     /** @type {Record<string, number>} */
     const w = {};
@@ -169,9 +173,11 @@ export function parseNC(text, fileName = '') {
       else w[letter] = value;
     }
 
-    // dialetto .pgm: un G-code macchina (>=100) rende la riga una direttiva,
+    // dialetto .pgm/.cn: un G-code macchina (>=100) rende la riga una DIRETTIVA,
     // non un moto. M/T/F su queste righe sono parametri della macro (es.
-    // "G510 A1 M2 ..." NON è fine programma). Da G2292 si leggono i dati tubo.
+    // "G510 A1 M2 ..." NON è fine programma); espressioni tipo Z(optimized_lift),
+    // S(workpiece_safe_dist), X(kine_x) sono parametri, non testo sconosciuto.
+    // Da G2292 si leggono i dati tubo. Le direttive NON generano avvisi.
     if (gCodes.some((g) => g >= 100)) {
       if (gCodes.includes(2292)) {
         if (w.Y !== undefined && w.V !== undefined) meta.tubeWidth = w.V - w.Y;
@@ -181,6 +187,9 @@ export function parseNC(text, fileName = '') {
       }
       continue;
     }
+
+    // avviso "testo non riconosciuto" solo per righe NON direttiva
+    if (junk) warn(ln, `Testo non riconosciuto: "${junk.slice(0, 24)}"`, true);
 
     // parametri header del dialetto tubo (LT<5597> DM<75.19> WW<73> WH<25>)
     for (const [key, metaKey] of Object.entries(TUBE_META)) {
