@@ -96,6 +96,31 @@ main { flex: 1; display: flex; min-height: 0; }
 .row.act { background: #22303f; }
 .row.sel { background: #2b425c; }
 .row.sel .ln { color: var(--accent); }
+.row.match { background: #3a3410; }
+.row.match-cur { background: #6b5a12; }
+
+/* ---- evidenziazione sintassi G-code (stile NCnetic) ---- */
+.t-g  { color: #ffd54a; }           /* G-code moto */
+.t-m  { color: #ff8fb3; }           /* M-code */
+.t-xyz{ color: #6fd3ff; }           /* coordinate X/Y/Z/I/J/K/R… */
+.t-fs { color: #90be6d; }           /* F/S avanzamento/mandrino */
+.t-tool{ color: #f8961e; }          /* T/D/H utensile */
+.t-n  { color: #6b7686; }           /* N/O numeri riga/programma */
+.t-cm { color: #5f7f5f; font-style: italic; }  /* commenti */
+
+/* ---- barra di ricerca ---- */
+#codeSearch {
+  display: flex; align-items: center; gap: 4px; padding: 5px 8px;
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+#codeSearch.hidden { display: none; }
+#searchInput {
+  flex: 1; min-width: 0; background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 5px; padding: 3px 7px; font: inherit;
+}
+#searchInput:focus { border-color: var(--accent); outline: none; }
+#searchCount { font: 11px Consolas, monospace; color: var(--muted); min-width: 42px; text-align: right; }
+#codeSearch button { padding: 2px 7px; }
 
 /* ---------- viewport ---------- */
 #viewport { flex: 1; position: relative; min-width: 0; background: var(--bg); }

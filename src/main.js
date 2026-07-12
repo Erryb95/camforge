@@ -59,6 +59,18 @@ const statsPanel = createStatsPanel($('infoContent'), {
   onWarningClick(line) { codePanel.select(line); },
 });
 
+// ---------- ricerca nel codice ----------
+codePanel.onSearchUpdate((n, total) => {
+  $('searchCount').textContent = total ? `${n}/${total}` : ($('searchInput').value ? '0/0' : '');
+});
+$('searchInput').addEventListener('input', (e) => codePanel.search(/** @type {HTMLInputElement} */(e.target).value));
+$('searchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? codePanel.searchPrev() : codePanel.searchNext(); }
+  if (e.key === 'Escape') { /** @type {HTMLInputElement} */($('searchInput')).value = ''; codePanel.search(''); $('canvas').focus(); }
+});
+$('searchNext').addEventListener('click', () => codePanel.searchNext());
+$('searchPrev').addEventListener('click', () => codePanel.searchPrev());
+
 // ---------- caricamento file ----------
 async function loadText(fileName, text) {
   try {
@@ -78,8 +90,9 @@ async function loadText(fileName, text) {
     }
     for (const d of model.drillPoints) geoLines.add(d.line);
 
+    const gcode = /\.(nc|gcode|ngc|tap|cnc|iso|eia|din|mpf|pgm|txt)$/i.test(fileName);
     viewer.setModel(model);
-    codePanel.setLines(model.rawLines, geoLines);
+    codePanel.setLines(model.rawLines, geoLines, gcode ? 'gcode' : 'plain');
     statsPanel.update(model);
     stopAnim(true);
     hideSegTip();
@@ -232,6 +245,13 @@ for (const [btn, panel] of [['btnCode', 'codePanel'], ['btnInfo', 'infoPanel']])
 }
 
 window.addEventListener('keydown', (e) => {
+  // Ctrl+F apre la ricerca da qualsiasi punto
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault();
+    /** @type {HTMLInputElement} */ ($('searchInput')).focus();
+    /** @type {HTMLInputElement} */ ($('searchInput')).select();
+    return;
+  }
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement
       || e.target instanceof HTMLButtonElement) return;
   if (e.key === 'f' || e.key === 'F') viewer.fit();
