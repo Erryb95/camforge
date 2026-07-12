@@ -46,7 +46,33 @@ G840                                    ← fine taglio
 - I 4 `.cn` caricano con **2 soli avvisi strutturali** (`?%…` assegnazione variabile, `JMPF` salto), zero "testo non riconosciuto", sezione/lunghezza/unroll corretti, mesh tubo generata.
 - STEP e `.cn` rendono la **stessa geometria** in 3D e svolto → estrazione + srotolamento allineati al CAM reale.
 
-## 5. Per GENERARE il .cn (prossimo, non ancora fatto)
+## 4-bis. Struttura confermata di TUBE1.cn (3 operazioni)
+
+- **N1 "Master_J2"** — taglio di testa ANTERIORE: X=−4.95 costante, C 0→360, i punti
+  (Y,Z) tracciano il perimetro della sezione (quadro 40×40, spigoli r3).
+- **N2 "Master_J3"** — il FORO Ø20: X∈[−139.95,−120.05] (centro −130), C=0 (faccia
+  superiore piana), cerchio r10, normale (0,0,1).
+- **N3 "Master_J"** — taglio di testa POSTERIORE: X=−255.05, C −360→0.
+
+Mapping confermato: **X_NC = −X_STEP − trim** (front −4.95 ↔ STEP 0; foro −130 ↔
+STEP 125; back −255 ↔ STEP 250). **C = atan2(normale_Y, normale_Z)°** (verificato:
+punto con EJ0.63/EK0.77 → C≈39.3°). EI=0 sui tagli radiali.
+
+## 5. Generatore STEP → NC — FATTO (validato su TUBE1)
+
+`src/generator/`: `features.js` (B-rep → sezione W×H, raggio spigoli, lunghezza,
+fori radiali) + `tubeNc.js` (emette il dialetto: header G2292, tagli di testa che
+tracciano `sectionPath()`, fori come cerchi, con mapping X/C/normali di sopra).
+Validazione (tests/generator.test.mjs): da TUBE1.step estrae feature esatte
+(40×40 r3, foro Ø20 a X=125) e genera un NC la cui **sezione e ingombro coincidono**
+con TUBE1.cn reale (match visivo 3D/svolto). Il numero di punti differisce solo per
+densità di tessellazione.
+
+**Ancora da fare**: asole/slot (archi+linee, non cerchi), sequenza/lead-in/tecnologia
+per materiale×spessore, e — se serve byte-exact — i valori C/feed del post reale
+(dipendono dal post-processor proprietario, non ricavabili dalla sola geometria).
+
+### (storico) note iniziali
 Serve replicare la struttura §2: per ogni contorno estratto (dallo STEP o dal disegno)
 emettere il blocco setup→attacco→lead-in→contorno(con EI/EJ/EK)→lead-out→fine, con:
 - mapping coordinate §3 (invertire X, mantenere Y/Z, calcolare C dalla posizione perimetrale),
