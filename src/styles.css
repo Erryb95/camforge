@@ -1,0 +1,163 @@
+:root {
+  --bg: #14171c;
+  --panel: #171b21;
+  --panel2: #1b2027;
+  --border: #262c35;
+  --text: #cfd6e1;
+  --muted: #7f8a99;
+  --accent: #4cc9f0;
+  --warn: #f8961e;
+  --sel: #ffffff;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- barra superiore ---------- */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.brand { font-size: 14px; margin-right: 6px; white-space: nowrap; }
+.brand b { color: var(--accent); }
+.brand .phase {
+  margin-left: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 2px 7px;
+}
+button, select {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.active, .seg-btns button.active { background: #24405c; border-color: var(--accent); color: #fff; }
+button.toggle { opacity: .55; }
+button.toggle.active { opacity: 1; }
+.seg-btns { display: inline-flex; }
+.seg-btns button { border-radius: 0; margin-left: -1px; padding: 5px 9px; }
+.seg-btns button:first-child { border-radius: 6px 0 0 6px; }
+.seg-btns button:last-child { border-radius: 0 6px 6px 0; }
+.sep { width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
+.grow { flex: 1; }
+.chk { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.chk input { accent-color: var(--accent); }
+#progress { width: 160px; accent-color: var(--accent); }
+#btnPlay { width: 36px; }
+
+/* ---------- layout centrale ---------- */
+main { flex: 1; display: flex; min-height: 0; }
+.panel {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+#codePanel { width: 300px; flex: 0 0 auto; }
+#infoPanel { width: 270px; flex: 0 0 auto; border-right: none; border-left: 1px solid var(--border); }
+.panel.hidden { display: none; }
+.panel-title {
+  padding: 7px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+
+/* ---------- pannello codice ---------- */
+#codeScroll { flex: 1; overflow: auto; position: relative; font: 12px/19px Consolas, monospace; }
+#codeSpacer { position: relative; }
+#codeView { position: absolute; left: 0; right: 0; top: 0; }
+.row { position: absolute; left: 0; right: 0; height: 19px; white-space: pre; display: flex; cursor: default; }
+.row .ln {
+  flex: 0 0 46px; text-align: right; padding-right: 8px; color: #4d5766;
+  user-select: none; background: var(--panel);
+}
+.row .tx { color: #aab4c3; overflow: hidden; }
+.row.geo { cursor: pointer; }
+.row.geo .tx { color: var(--text); }
+.row:hover { background: #1e242d; }
+.row.act { background: #22303f; }
+.row.sel { background: #2b425c; }
+.row.sel .ln { color: var(--accent); }
+
+/* ---------- viewport ---------- */
+#viewport { flex: 1; position: relative; min-width: 0; background: var(--bg); }
+#canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; display: block; }
+#dropHint {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+  color: var(--muted); pointer-events: none; text-align: center;
+}
+#dropHint .big { font-size: 20px; }
+#dropHint .big b { color: var(--accent); }
+#dropHint.hidden { display: none; }
+#viewport.dragging::after {
+  content: "Rilascia per caricare";
+  position: absolute; inset: 10px; border: 2px dashed var(--accent); border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(76, 201, 240, .08); color: var(--accent); font-size: 18px;
+  pointer-events: none;
+}
+#segTip {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: var(--panel2); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 6px 12px; font: 12px Consolas, monospace; color: var(--text);
+  box-shadow: 0 4px 16px rgba(0,0,0,.4); white-space: nowrap; z-index: 5;
+}
+#segTip .close { margin-left: 10px; cursor: pointer; color: var(--muted); }
+#segTip .close:hover { color: #fff; }
+
+/* ---------- pannello info ---------- */
+#infoContent { flex: 1; overflow: auto; padding: 10px 12px; }
+.info-sec { margin-bottom: 14px; }
+.info-sec h3 {
+  margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600;
+}
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12px; }
+.kv .k { color: var(--muted); }
+.kv .v { text-align: right; font-family: Consolas, monospace; }
+.tool-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+.tool-row input { accent-color: var(--accent); }
+.tool-chip { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+.tool-row .cnt { margin-left: auto; color: var(--muted); font-family: Consolas, monospace; }
+.warn-row {
+  padding: 4px 6px; margin: 2px 0; font-size: 11px; border-left: 3px solid var(--warn);
+  background: #221d14; border-radius: 0 4px 4px 0; cursor: pointer;
+}
+.warn-row:hover { background: #2a2318; }
+.warn-row .wl { color: var(--warn); font-family: Consolas, monospace; margin-right: 6px; }
+.empty-note { color: var(--muted); font-size: 12px; font-style: italic; }
+
+/* ---------- barra di stato ---------- */
+#statusbar {
+  display: flex; gap: 18px; padding: 4px 12px;
+  background: var(--panel); border-top: 1px solid var(--border);
+  font: 12px Consolas, monospace; color: var(--muted); flex: 0 0 auto;
+}
+#sbCoords { color: var(--text); min-width: 190px; }
+
+/* ---------- toast ---------- */
+#toast {
+  position: fixed; bottom: 42px; left: 50%; transform: translateX(-50%);
+  background: #3a1f1f; border: 1px solid #a44; color: #f2c4c4;
+  padding: 8px 16px; border-radius: 8px; z-index: 20; max-width: 70%;
+}
+#toast.ok { background: #16281c; border-color: #3a7d4f; color: #bfe8cc; }

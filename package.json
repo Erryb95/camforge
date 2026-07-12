@@ -1,0 +1,11 @@
+{
+  "name": "cad-cam-visual-lge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Visualizzatore 2D percorsi utensile da file NC/G-code (fase 1). Estensioni previste: DXF, DWG, STEP.",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test \"tests/*.test.mjs\""
+  }
+}

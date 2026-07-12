@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAD/CAM Viewer — LGE</title>
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">CAD/CAM <b>Viewer</b><span class="phase">fase 1 · NC</span></div>
+  <button id="btnOpen" title="Apri un file NC">&#128194; Apri</button>
+  <input type="file" id="fileInput" hidden
+         accept=".nc,.gcode,.ngc,.tap,.cnc,.iso,.eia,.din,.mpf,.txt">
+  <button id="btnDemo" title="Carica il programma dimostrativo">Demo</button>
+  <span class="sep"></span>
+  <div class="seg-btns" id="viewBtns" title="Piano di vista">
+    <button data-v="XY" class="active">XY</button>
+    <button data-v="XZ">XZ</button>
+    <button data-v="YZ">YZ</button>
+  </div>
+  <button id="btnFit" title="Adatta alla vista (F)">&#10530; Adatta</button>
+  <label class="chk" title="Mostra/nascondi movimenti rapidi G0">
+    <input type="checkbox" id="chkRapids" checked> Rapidi</label>
+  <label class="chk" title="Mostra/nascondi punti di foratura (cicli G81-G83)">
+    <input type="checkbox" id="chkPoints" checked> Fori</label>
+  <span class="sep"></span>
+  <button id="btnPlay" title="Simula il percorso (Spazio)">&#9654;</button>
+  <input type="range" id="progress" min="0" max="1000" value="1000" title="Avanzamento simulazione">
+  <select id="speed" title="Velocità simulazione">
+    <option value="25">lenta</option>
+    <option value="80" selected>media</option>
+    <option value="250">veloce</option>
+    <option value="900">turbo</option>
+  </select>
+  <span class="grow"></span>
+  <button id="btnCode" class="toggle active">Codice</button>
+  <button id="btnInfo" class="toggle active">Info</button>
+</header>
+
+<main>
+  <aside id="codePanel" class="panel">
+    <div class="panel-title">Programma</div>
+    <div id="codeScroll"><div id="codeSpacer"><div id="codeView"></div></div></div>
+  </aside>
+
+  <div id="viewport">
+    <canvas id="canvas"></canvas>
+    <div id="dropHint">
+      <div class="big">Trascina qui un file <b>.nc</b></div>
+      <div class="small">oppure usa &#128194; Apri &nbsp;·&nbsp; formati: nc · gcode · ngc · tap · cnc</div>
+    </div>
+    <div id="segTip" hidden></div>
+  </div>
+
+  <aside id="infoPanel" class="panel">
+    <div class="panel-title">Informazioni</div>
+    <div id="infoContent"></div>
+  </aside>
+</main>
+
+<footer id="statusbar">
+  <span id="sbCoords">—</span>
+  <span id="sbZoom"></span>
+  <span id="sbCount"></span>
+  <span id="sbUnits"></span>
+  <span class="grow"></span>
+  <span id="sbFile">nessun file</span>
+</footer>
+
+<div id="toast" hidden></div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
