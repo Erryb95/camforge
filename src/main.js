@@ -20,6 +20,11 @@ let lineToSegs = new Map();
 const viewer = createViewer(/** @type {HTMLCanvasElement} */ ($('canvas')), {
   onHover(seg, world) {
     codePanel.setActive(seg ? seg.line : -1);
+    if (viewer.isOrbit()) {
+      const o = viewer.getOrbit();
+      $('sbCoords').textContent = `orbita  az ${o.az.toFixed(0)}°  el ${o.el.toFixed(0)}°`;
+      return;
+    }
     const lab = viewer.getAxisLabels();
     $('sbCoords').textContent = world
       ? `${lab[0]} ${world[0].toFixed(3)}   ${lab[1]} ${world[1].toFixed(3)}`
@@ -78,11 +83,12 @@ async function loadText(fileName, text) {
     stopAnim(true);
     hideSegTip();
 
-    // vista svolta: disponibile (e attivata) solo per i file tubo
+    // scelta vista iniziale in base al contenuto:
+    //  tubo → Svolto · STEP/3D → orbita 3D · altrimenti XY
     const dev = !!(model.meta && model.meta.unrollAvailable);
+    const is3d = !!(model.meta && (model.meta.dialect === 'STEP' || model.meta.dialect === 'DWG3D'));
     $('btnDev').hidden = !dev;
-    if (dev) setViewUI('DEV');
-    else if (viewer.getView() === 'DEV') setViewUI('XY');
+    setViewUI(dev ? 'DEV' : is3d ? '3D' : 'XY');
 
     $('dropHint').classList.add('hidden');
     $('sbFile').textContent = fileName;

@@ -12,11 +12,13 @@ const DIM_ALPHA = 0.18;
 
 // proiezioni di vista (indipendenti dal piano degli archi)
 // DEV = "tubo svolto": usa seg.uv precalcolato dai loader (u assiale, v perimetro)
+// 3D = orbita ortografica (azimut/elevazione), Z-up
 const VIEWS = {
   XY: { u: (p) => p.x, v: (p) => p.y, labels: ['X', 'Y'] },
   XZ: { u: (p) => p.x, v: (p) => p.z, labels: ['X', 'Z'] },
   YZ: { u: (p) => p.y, v: (p) => p.z, labels: ['Y', 'Z'] },
   DEV: { u: null, v: null, labels: ['L', 'C'] },
+  '3D': { u: null, v: null, labels: ['3D'], orbit: true },
 };
 
 /**
@@ -31,6 +33,8 @@ export function createViewer(canvas, cb = {}) {
     view: 'XY',
     camU: 0, camV: 0,          // centro vista in coordinate mondo
     scale: 4,                  // px per mm
+    yaw: -0.8,                 // azimut orbita 3D (rad)
+    pitch: 0.5,                // elevazione orbita 3D (rad)
     showRapids: true,
     showPoints: true,
     hiddenTools: new Set(),
@@ -67,6 +71,17 @@ export function createViewer(canvas, cb = {}) {
   const toWorld = (sx, sy) => [ (sx - w / 2) / state.scale + state.camU,
                                 (h / 2 - sy) / state.scale + state.camV ];
 
+  // proiezione orbitale 3D: azimut attorno a Z (world up), elevazione.
+  // Restituisce le coordinate sul piano schermo [u destra, v alto].
+  function project3d(p) {
+    const sa = Math.sin(state.yaw), ca = Math.cos(state.yaw);
+    const se = Math.sin(state.pitch), ce = Math.cos(state.pitch);
+    return [
+      p.x * sa - p.y * ca,
+      -p.x * se * ca - p.y * se * sa + p.z * ce,
+    ];
+  }
+
   // ---------- cache proiezione ----------
   function rebuildProjection() {
     state.proj = [];
@@ -82,6 +97,12 @@ export function createViewer(canvas, cb = {}) {
         for (let i = 0; i < seg.uv.length; i++) {
           pts[i * 2] = seg.uv[i].u;
           pts[i * 2 + 1] = seg.uv[i].v;
+        }
+      } else if (state.view === '3D') {
+        pts = new Float64Array(seg.pts.length * 2);
+        for (let i = 0; i < seg.pts.length; i++) {
+          const [u, v] = project3d(seg.pts[i]);
+          pts[i * 2] = u; pts[i * 2 + 1] = v;
         }
       } else {
         pts = new Float64Array(seg.pts.length * 2);
@@ -107,6 +128,45 @@ export function createViewer(canvas, cb = {}) {
     const p = Math.pow(10, Math.floor(Math.log10(raw)));
     for (const m of [1, 2, 5, 10]) if (raw <= m * p) return m * p;
     return 10 * p;
+  }
+
+  // griglia di terra sul piano XY (z=0) per la vista 3D + gizmo assi
+  function draw3dScene() {
+    const b = state.model && state.model.bounds;
+    if (b) {
+      const step = niceStep(Math.max(b.max.x - b.min.x, b.max.y - b.min.y) / 8 || 10);
+      const x0 = Math.floor(b.min.x / step) * step, x1 = Math.ceil(b.max.x / step) * step;
+      const y0 = Math.floor(b.min.y / step) * step, y1 = Math.ceil(b.max.y / step) * step;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#1b212a';
+      const line3 = (ax, ay, az, bx, by, bz) => {
+        const [su, sv] = project3d({ x: ax, y: ay, z: az });
+        const [eu, ev] = project3d({ x: bx, y: by, z: bz });
+        const [s0, s1] = toScreen(su, sv), [e0, e1] = toScreen(eu, ev);
+        ctx.beginPath(); ctx.moveTo(s0, s1); ctx.lineTo(e0, e1); ctx.stroke();
+      };
+      for (let x = x0; x <= x1 + 1e-6; x += step) line3(x, y0, 0, x, y1, 0);
+      for (let y = y0; y <= y1 + 1e-6; y += step) line3(x0, y, 0, x1, y, 0);
+    }
+    drawGizmo();
+  }
+
+  // gizmo assi (orientamento corrente) in basso a sinistra
+  function drawGizmo() {
+    const ox = 46, oy = h - 46, L = 26;
+    const axes = [
+      [1, 0, 0, '#f94144', 'X'],
+      [0, 1, 0, '#90be6d', 'Y'],
+      [0, 0, 1, '#4cc9f0', 'Z'],
+    ];
+    ctx.font = 'bold 11px Consolas, monospace';
+    for (const [ax, ay, az, col, lab] of axes) {
+      const [u, v] = project3d({ x: ax, y: ay, z: az });
+      const ex = ox + u * L, ey = oy - v * L;
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ex, ey); ctx.stroke();
+      ctx.fillText(lab, ex + (u >= 0 ? 2 : -9), ey + (v >= 0 ? -2 : 9));
+    }
   }
 
   function drawGrid() {
@@ -233,6 +293,8 @@ export function createViewer(canvas, cb = {}) {
         if (state.view === 'DEV') {
           if (!d.uv) continue;
           du = d.uv.u; dv = d.uv.v;
+        } else if (state.view === '3D') {
+          [du, dv] = project3d(d.at);
         } else {
           du = V.u(d.at); dv = V.v(d.at);
         }
@@ -328,7 +390,8 @@ export function createViewer(canvas, cb = {}) {
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    drawGrid();
+    if (state.view === '3D') draw3dScene();
+    else drawGrid();
     drawGuides();
     drawModel();
   }
@@ -363,10 +426,11 @@ export function createViewer(canvas, cb = {}) {
   }
 
   // ---------- interazione ----------
-  let panning = false, moved = false, lastX = 0, lastY = 0;
+  let panning = false, moved = false, lastX = 0, lastY = 0, dragShift = false;
 
   canvas.addEventListener('mousedown', (e) => {
     panning = true; moved = false;
+    dragShift = e.shiftKey;
     lastX = e.offsetX; lastY = e.offsetY;
   });
   window.addEventListener('mouseup', (e) => {
@@ -386,8 +450,15 @@ export function createViewer(canvas, cb = {}) {
       const dx = ox - lastX, dy = oy - lastY;
       if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
       if (moved) {
-        state.camU -= dx / state.scale;
-        state.camV += dy / state.scale;
+        if (state.view === '3D' && !dragShift) {
+          // orbita: trascinamento orizzontale = azimut, verticale = elevazione
+          state.yaw += dx * 0.01;
+          state.pitch = Math.max(-1.5, Math.min(1.5, state.pitch + dy * 0.01));
+          rebuildProjection();
+        } else {
+          state.camU -= dx / state.scale;
+          state.camV += dy / state.scale;
+        }
         lastX = ox; lastY = oy;
         draw();
       }
@@ -435,10 +506,14 @@ export function createViewer(canvas, cb = {}) {
     setView(view) {
       if (!VIEWS[view]) return;
       state.view = view;
+      canvas.style.cursor = view === '3D' ? 'grab' : 'crosshair';
       rebuildProjection();
       this.fit();
       cb.onViewChange && cb.onViewChange(view);
     },
+    resetOrbit() { state.yaw = -0.8; state.pitch = 0.5; rebuildProjection(); this.fit(); },
+    isOrbit() { return state.view === '3D'; },
+    getOrbit() { return { az: state.yaw * 180 / Math.PI, el: state.pitch * 180 / Math.PI }; },
     fit() {
       if (w <= 0 || h <= 0) { pendingFit = true; return; }
       if (!state.proj.length) { draw(); return; }

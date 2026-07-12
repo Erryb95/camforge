@@ -23,10 +23,18 @@ const res = parseFile(input.split(/[\\/]/).pop(), text);
 const model = await Promise.resolve(res.model);
 
 // --- proiezione ---
+// orbita 3D fissa (stessa formula del viewer): az/el via env AZ/EL (gradi)
+const az = (Number(process.env.AZ) || -46) * Math.PI / 180;
+const el = (Number(process.env.EL) || 29) * Math.PI / 180;
+const p3d = (p) => [
+  p.x * Math.sin(az) - p.y * Math.cos(az),
+  -p.x * Math.sin(el) * Math.cos(az) - p.y * Math.sin(el) * Math.sin(az) + p.z * Math.cos(el),
+];
 const PLANES = {
   XY: (p) => [p.x, p.y],
   XZ: (p) => [p.x, p.z],
   YZ: (p) => [p.y, p.z],
+  '3D': p3d,
 };
 /** @type {{type:string, pts:number[][]}[]} */
 const polys = [];
