@@ -133,6 +133,19 @@ STEP/DXF ─► [opencascade.js] facce/edge B-rep
 5. Licenze da chiudere: Deepnest (NOASSERTION), Analysis Situs/lst2ngc, import STEP di brepjs.
 6. `.atd` = Parasolid (Siemens), non leggibile senza licenza.
 
+## 6-bis. Integrato in questa fase (verificato)
+
+- **clipper-lib 6.4.2** (Angus Johnson, Boost SW License, puro JS, zero-dep) →
+  `vendor/clipper/` + `src/loaders/cad/offset.js` (`offsetClosed`, `pathArea`).
+  È la **primitiva di kerf-compensation** (offset ±kerf/2) fondante del generatore.
+  Testata: quadrato 40 → 42 (offset +1) / 38 (offset −1), giunti round/miter. Pronta,
+  non ancora esposta in UI (la userà il generatore .cn).
+- **Assessment integrazioni**: i nostri parser battono i generici sui dialetti tubo
+  (Adige/Cutlite/LXD) → cncjs NON integrato (regressione). **opencascade.js** (edge
+  B-rep, fix definitivo del doppio contorno) RIMANDATO: 30+MB WASM, LGPL, integrazione
+  grossa e rischiosa; l'euristica PCA attuale copre ~95%. Da valutare quando servirà
+  la precisione B-rep esatta.
+
 ## 7. Prossimi passi consigliati
 
 1. **Apri un `.cn` e conferma `<LXDDocument>`** → scrivi il parser JS seguendo lo schema LXD.

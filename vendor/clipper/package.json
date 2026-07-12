@@ -1,0 +1,4 @@
+{
+  "comment": "clipper-lib 6.4.2 (Angus Johnson, Boost Software License 1.0). UMD/CommonJS: senza questo package.json il require() da Node lo tratterebbe come ESM (il progetto ha type:module) e ClipperLib non verrebbe esportato.",
+  "type": "commonjs"
+}
