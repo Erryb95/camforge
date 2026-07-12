@@ -30,11 +30,14 @@ src/
   core/model.js       SceneModel COMUNE: Segment, DrillPoint, Bounds, stats
   core/registry.js    estensione file → loader (con fallback)
   core/unroll.js      sviluppo "tubo svolto": perimetro sezione, unwrap, guide
-  loaders/nc/         parser G-code + dialetto laser tubo → SceneModel  [fase 1 ✓]
-  loaders/alma/       AlmaCAM XML .cn/.ctd (polilinee 3D)               [fase 1 ✓]
-  loaders/dxf/        [fase 2 - da fare, dxf-parser vendorizzato]
-  loaders/dwg/        [fase 3 - da fare, libredwg-web WASM]
-  loaders/step/       [fase 3 - da fare, occt-import-js + renderer 3D]
+  loaders/nc/         parser G-code + dialetti tubo (Adige .nc, .pgm)   [✓]
+  loaders/alma/       AlmaCAM XML .cn/.ctd (polilinee 3D)               [✓]
+  loaders/dxf/        DXF zero-dep: LINE/ARC/CIRCLE/LWPOLYLINE(bulge)/
+                      POLYLINE/ELLIPSE/SPLINE(de Boor)/INSERT, layer     [✓]
+  loaders/step/       occt-import-js (WASM vendorizzato) → spigoli
+                      caratteristici, parse ASINCRONO                    [✓]
+  loaders/atd/        ActTubes: solo metadati (geometria = Parasolid)    [✓]
+  loaders/dwg/        [da fare: libredwg-web WASM in vendor/]
   render/viewer2d.js  canvas: griglia, pan/zoom, hit-test, simulazione
   ui/codePanel.js     lista codice virtualizzata, sync bidirezionale col viewer
   ui/statsPanel.js    ingombri, lunghezze, utensili (toggle), avvisi
@@ -76,9 +79,22 @@ v = ascissa perimetrale di `(Y, Z)` sulla sezione (v=0 centro faccia superiore).
 AlmaCAM: sezione tonda/rettangolare autorilevata dai raggi dei punti.
 
 Fuori scope (avvisato): compensazione raggio G41/G42, origini G54–G59,
-sottoprogrammi M98/M99, macro `#`. I `.pgm` (altro controllo, con espressioni
-`X(kine_x)`) passano dal fallback NC: caricano con avvisi, dialetto da rifinire.
-Gli `.atd` (ActTubes XML) non sono ancora supportati.
+sottoprogrammi M98/M99, macro `#`.
+
+**Dialetto .pgm** (secondo controllo tubo): un G-code ≥100 sulla riga la rende
+una DIRETTIVA macchina — mai un moto, e M/T/F lì sopra sono parametri della
+macro (es. `G510 A1 M2 …` NON è fine programma). `G2292 Y… V… Z… W… U…` dà
+bounding box sezione e lunghezza tubo (`profileAuto`: tondo se i punti reali
+sono a raggio costante, altrimenti rettangolo). Rotazione = parola `C`
+(equivalente di `P` Adige), coordinate già nel sistema pezzo anche qui.
+
+**STEP**: `vendor/occt/` contiene occt-import-js (UMD + WASM, ~7.7 MB, niente
+CDN). Il `parse` è asincrono (registry/main gestiscono il Promise); in Node il
+`require` dell'UMD funziona SOLO grazie a `vendor/occt/package.json`
+(`type: commonjs`) — non rimuoverlo. La mesh diventa wireframe di spigoli
+caratteristici (bordi liberi + diedri >25°); ogni solido = un "utensile"
+spegnibile. **.atd** (ActTubes): geometria Parasolid non parsabile → solo
+metadati tubo + avviso.
 
 ## Automazione test visivi
 

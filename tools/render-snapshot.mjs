@@ -6,6 +6,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { deflateSync } from 'node:zlib';
 import '../src/loaders/nc/index.js';
 import '../src/loaders/alma/index.js';
+import '../src/loaders/dxf/index.js';
+import '../src/loaders/step/index.js';
+import '../src/loaders/atd/index.js';
 import { parseFile } from '../src/core/registry.js';
 
 const [, , input, output, view = 'DEV', W = '1200', H = '700'] = process.argv;
@@ -16,7 +19,8 @@ if (!input || !output) {
 const w = parseInt(W, 10), h = parseInt(H, 10);
 
 const text = await readFile(input, 'utf8');
-const { model } = parseFile(input.split(/[\\/]/).pop(), text);
+const res = parseFile(input.split(/[\\/]/).pop(), text);
+const model = await Promise.resolve(res.model);
 
 // --- proiezione ---
 const PLANES = {

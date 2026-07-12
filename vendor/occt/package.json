@@ -1,0 +1,4 @@
+{
+  "comment": "occt-import-js è un UMD CommonJS: senza questo file, il require() da Node lo tratterebbe come ESM (il package.json del progetto ha type:module) e la factory non verrebbe esportata.",
+  "type": "commonjs"
+}

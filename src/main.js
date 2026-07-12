@@ -3,6 +3,9 @@
 
 import './loaders/nc/index.js';                 // registra il loader NC (+fallback)
 import './loaders/alma/index.js';               // registra il loader AlmaCAM (.cn/.ctd)
+import './loaders/dxf/index.js';                // registra il loader DXF
+import './loaders/step/index.js';               // registra il loader STEP (async, WASM)
+import './loaders/atd/index.js';                // registra il loader ActTubes (.atd)
 import { parseFile } from './core/registry.js';
 import { createViewer } from './render/viewer2d.js';
 import { createCodePanel } from './ui/codePanel.js';
@@ -51,10 +54,14 @@ const statsPanel = createStatsPanel($('infoContent'), {
 });
 
 // ---------- caricamento file ----------
-function loadText(fileName, text) {
+async function loadText(fileName, text) {
   try {
     const t0 = performance.now();
     const res = parseFile(fileName, text);
+    if (res.model && typeof (/** @type {any} */ (res.model)).then === 'function') {
+      toast('Caricamento motore geometrico (WASM)…', true);
+      res.model = await res.model;
+    }
     model = res.model;
     lineToSegs = new Map();
     const geoLines = new Set();

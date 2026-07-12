@@ -155,7 +155,7 @@ export function parseNC(text, fileName = '') {
     }
 
     const { words, params, junk } = tokenize(line);
-    if (junk) warn(ln, `Testo non riconosciuto: "${junk.slice(0, 24)}"`);
+    if (junk) warn(ln, `Testo non riconosciuto: "${junk.slice(0, 24)}"`, true);
 
     /** @type {Record<string, number>} */
     const w = {};
@@ -167,6 +167,19 @@ export function parseNC(text, fileName = '') {
       if (letter === 'G') gCodes.push(value);
       else if (letter === 'M') mCodes.push(value);
       else w[letter] = value;
+    }
+
+    // dialetto .pgm: un G-code macchina (>=100) rende la riga una direttiva,
+    // non un moto. M/T/F su queste righe sono parametri della macro (es.
+    // "G510 A1 M2 ..." NON è fine programma). Da G2292 si leggono i dati tubo.
+    if (gCodes.some((g) => g >= 100)) {
+      if (gCodes.includes(2292)) {
+        if (w.Y !== undefined && w.V !== undefined) meta.tubeWidth = w.V - w.Y;
+        if (w.Z !== undefined && w.W !== undefined) meta.tubeHeight = w.W - w.Z;
+        if (w.U !== undefined) meta.tubeLength = Math.abs(w.U);
+        meta.profileAuto = true;   // tondo/rettangolare deciso dai punti reali
+      }
+      continue;
     }
 
     // parametri header del dialetto tubo (LT<5597> DM<75.19> WW<73> WH<25>)
@@ -256,7 +269,8 @@ export function parseNC(text, fileName = '') {
     // dialetto tubo: P = rotazione tubo, X_1 = carro (solo con header tubo presente)
     const tubeDialect = meta.tubeLength !== undefined || meta.tubeWidth !== undefined
       || meta.tubeDiameter !== undefined;
-    const rotWord = tubeDialect ? w.P : undefined;
+    // rotazione tubo: P (Adige) oppure C (.pgm)
+    const rotWord = tubeDialect ? (w.P !== undefined ? w.P : w.C) : undefined;
     const auxWord = tubeDialect && params.X_1 != null ? params.X_1 : undefined;
     // P è espresso modulo 360: la macchina prende la via corta (0→357 = -3°,
     // non +357°). Riporta il nuovo valore sul giro più vicino a quello attuale.

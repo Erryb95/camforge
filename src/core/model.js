@@ -46,6 +46,7 @@
  * @property {string[]} rawLines
  * @property {Bounds|null} bounds      ingombro di tutte le corse
  * @property {Bounds|null} boundsFeed  ingombro del solo percorso in lavoro
+ * @property {Record<number, string>} [toolNames]  etichette (es. layer DXF) per gli "utensili"
  * @property {{feedLen:number, rapidLen:number, timeMin:number|null, tools:number[]}} stats
  */
 

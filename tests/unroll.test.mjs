@@ -91,6 +91,29 @@ test('dialetto NC tubo: uv con carro X_1 e rotazione P', () => {
   near(s2.rot0, 0); near(s2.rot1, 10);   // P comunque registrato (tooltip)
 });
 
+test('dialetto .pgm: shield G-macchina, meta G2292, rotazione C', () => {
+  const m = parseNC([
+    '% .PGM',
+    'G2292 Y-30 V30 Z-30 W30 I7 X0 U-6000',
+    'G510 A1 V-1800 W280 M2 L-0.95 P208.1',   // M2 qui NON è fine programma
+    'G800 D1 G10 X-0.95 Y0 Z30 H0 C0 F1 T1 P1 R1',
+    'G1 X-5 Y0 Z30 C0 B0 EI0.00000 EJ0.00000 EK1.00000',
+    'G1 Y10 C2.9',
+    'G832',
+  ].join('\n'), 'test.pgm');
+  near(m.meta.tubeWidth, 60);
+  near(m.meta.tubeHeight, 60);
+  near(m.meta.tubeLength, 6000);
+  assert.ok(m.meta.unrollAvailable);
+  // le righe G>=100 non generano segmenti né terminano il programma
+  assert.equal(m.segments.length, 2);
+  assert.equal(m.segments[1].type, 'feed');
+  near(m.segments[1].to.y, 10);
+  near(m.segments[1].rot1, 2.9);      // C tracciato come rotazione
+  near(m.segments[1].uv.at(-1).v, 10); // faccia superiore: v = Y
+  assert.equal(m.warnings.length, 0, JSON.stringify(m.warnings));
+});
+
 test('milling normale: P non attiva lo sviluppo senza header tubo', () => {
   const m = parseNC('G90\nG1 X10 F100\nG4 P500\nG1 X20\n');
   assert.equal(m.meta.unrollAvailable, undefined);
@@ -159,6 +182,22 @@ test('reale ALFA.NC: u copre il tubo, v limitato', { skip: !hasReal }, async () 
   }
   assert.ok(uMin > -50 && uMax < 6100, `u fuori range: ${uMin}..${uMax}`);
   assert.ok(vAbs < 200, `v oltre un perimetro+overlap (per=120): ${vAbs}`);
+});
+
+test('reale TUBE-2026-90-1.pgm: sezione 60×60, sviluppo attivo', { skip: !hasReal }, async () => {
+  const { readFile } = await import('node:fs/promises');
+  const text = await readFile(new URL('TUBE-2026-90-1.pgm', REAL_DIR), 'utf8');
+  const m = parseNC(text, 'TUBE-2026-90-1.pgm');
+  near(m.meta.tubeLength, 6000);
+  assert.ok(m.meta.unrollAvailable, 'sviluppo non attivo');
+  // sezione quadra: i punti NON sono a raggio costante → resta il rettangolo
+  near(m.meta.tubeWidth, 60);
+  near(m.meta.tubeHeight, 60);
+  assert.ok(m.segments.length > 400, `pochi segmenti: ${m.segments.length}`);
+  assert.ok(m.warnings.length < 15, `troppi avvisi (${m.warnings.length}): ${JSON.stringify(m.warnings.slice(0, 8))}`);
+  let vAbs = 0;
+  for (const s of m.segments) for (const q of s.uv || []) vAbs = Math.max(vAbs, Math.abs(q.v));
+  assert.ok(vAbs < 400, `v oltre un perimetro+overlap (per=240): ${vAbs}`);
 });
 
 test('reale TUBE__2.cn: sviluppo tondo', { skip: !hasReal }, async () => {

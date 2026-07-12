@@ -63,8 +63,10 @@ export function createStatsPanel(container, cb = {}) {
         <span class="k">Tempo lavoro</span><span class="v">${model.stats.timeMin !== null ? '≈ ' + fmtTime(model.stats.timeMin) : 'n/d'}</span>
       </div></div>`;
 
-    // utensili
-    html += '<div class="info-sec"><h3>Utensili</h3>';
+    // utensili (o layer, per i formati CAD)
+    const names = /** @type {any} */ (model).toolNames || {};
+    const isLayers = Object.keys(names).length > 0;
+    html += `<div class="info-sec"><h3>${isLayers ? 'Layer' : 'Utensili'}</h3>`;
     if (model.stats.tools.length === 0) {
       html += '<div class="empty-note">Nessun cambio utensile (T/M6) nel programma.</div>';
     } else {
@@ -72,8 +74,9 @@ export function createStatsPanel(container, cb = {}) {
         const t = model.stats.tools[i];
         const color = TOOL_COLORS[i % TOOL_COLORS.length];
         const count = model.segments.filter((s) => s.tool === t && s.type !== 'rapid').length;
+        const label = names[t] ? esc(names[t]) : `T${t}`;
         html += `<label class="tool-row"><input type="checkbox" checked data-tool="${t}">
-          <span class="tool-chip" style="background:${color}"></span>T${t}
+          <span class="tool-chip" style="background:${color}"></span>${label}
           <span class="cnt">${count} seg</span></label>`;
       }
     }

@@ -114,6 +114,32 @@ export function guidesFor(profile) {
  * @param {Record<string, any>} meta  aggiornato con unrollAvailable/perimeter/unrollGuides
  */
 export function applyTubeUnroll(segments, meta) {
+  // profilo "auto" (header .pgm G2292 dà solo il bounding box): se i punti
+  // in lavoro giacciono a raggio ~costante la sezione è tonda, altrimenti
+  // resta il rettangolo del bounding box
+  if (meta.profileAuto && meta.tubeWidth && meta.tubeHeight) {
+    let rMin = Infinity, rMax = -Infinity, rSum = 0, n = 0;
+    for (const seg of segments) {
+      if (seg.type === 'rapid') continue;
+      for (const p of [seg.from, seg.to]) {
+        const r = Math.hypot(p.y, p.z);
+        if (r < rMin) rMin = r;
+        if (r > rMax) rMax = r;
+        rSum += r; n++;
+      }
+      if (n > 800) break;
+    }
+    if (n > 10) {
+      const mean = rSum / n;
+      if (mean > 1e-6 && (rMax - rMin) / mean < 0.05) {
+        meta.tubeDiameter = 2 * mean;
+        delete meta.tubeWidth;
+        delete meta.tubeHeight;
+      }
+    }
+    meta.profileAuto = false;
+  }
+
   const profile = profileFromMeta(meta);
   if (!profile || !segments.length) return;
   const unwrap = makeUnwrapper(profile.per);
