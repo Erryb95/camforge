@@ -178,7 +178,8 @@ test('loader AlmaCAM: polilinee 3D e metadati tubo', async () => {
   const xml = '<LXDDocument FileVer="1"><DocHeader>' +
     '<ExtMin X="-57.15" Y="-57.15" Z="0"/><ExtMax X="57.15" Y="57.15" Z="5500"/></DocHeader>' +
     '<Segments TubeLength="5500" TubeName="TUBE__2">' +
-    '<GeoCurve><Geometry><CompositeCurve3D><Polyline3D PointCount="3">' +
+    '<CrossSection><SectionData><Circle Radius="57.15"/></SectionData></CrossSection>' +
+    '<GeoCurve IsCutOff="true"><Geometry><CompositeCurve3D><Polyline3D PointCount="3">' +
     '<Point3D X="0" Y="0" Z="10"/><Point3D X="10" Y="0" Z="10"/><Point3D X="10" Y="5" Z="10"/>' +
     '</Polyline3D></CompositeCurve3D></Geometry></GeoCurve>' +
     '<GeoCurve><Geometry><CompositeCurve3D><Polyline3D PointCount="2">' +
