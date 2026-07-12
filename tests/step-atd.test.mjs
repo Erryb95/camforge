@@ -28,18 +28,35 @@ test('ATD: metadati tubo e avviso Parasolid', () => {
   });
 });
 
-test('STEP reale: P26015-mi-T005_1.stp → wireframe spigoli', { skip: !hasReal || !hasOcct }, async () => {
+test('STEP reale: P26015-mi-T005_1.stp → mesh + spigoli sequenziati', { skip: !hasReal || !hasOcct }, async () => {
   const { readFile } = await import('node:fs/promises');
   const { parseStep } = await import('../src/loaders/step/parser.js');
   const text = await readFile(new URL('P26015-mi-T005_1.stp', REAL_DIR), 'utf8');
   const m = await parseStep(text, 'P26015-mi-T005_1.stp');
   assert.equal(m.warnings.length, 0, JSON.stringify(m.warnings));
   assert.ok(m.segments.length > 50, `pochi spigoli: ${m.segments.length}`);
+  assert.ok(m.mesh && m.mesh.indices.length > 100, 'mesh solida assente');
   assert.ok(m.stats.tools.length >= 1, 'nessun solido');
-  assert.ok(m.bounds, 'bounds nulli');
-  const dx = m.bounds.max.x - m.bounds.min.x;
-  const dy = m.bounds.max.y - m.bounds.min.y;
-  const dz = m.bounds.max.z - m.bounds.min.z;
-  assert.ok(Math.max(dx, dy, dz) > 1 && Math.max(dx, dy, dz) < 100000,
-    `dimensioni sospette: ${dx} × ${dy} × ${dz}`);
+  const dMax = Math.max(m.bounds.max.x - m.bounds.min.x, m.bounds.max.y - m.bounds.min.y, m.bounds.max.z - m.bounds.min.z);
+  assert.ok(dMax > 1 && dMax < 100000, `dimensioni sospette: ${dMax}`);
+  // sequenza ordinata: il salto medio tra segmenti consecutivi è contenuto
+  let jump = 0;
+  for (let i = 1; i < m.segments.length; i++) {
+    const a = m.segments[i - 1].to, b = m.segments[i].from;
+    jump += Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  }
+  assert.ok(jump / m.segments.length < 40, `sequenza non ordinata: salto medio ${jump / m.segments.length}`);
+});
+
+const IGS = new URL('../samples/cad/cube.igs', import.meta.url);
+const hasIges = existsSync(fileURLToPath(IGS));
+test('IGES: cube.igs → solido 10×10×10', { skip: !hasIges || !hasOcct }, async () => {
+  const { readFile } = await import('node:fs/promises');
+  const { parseStep } = await import('../src/loaders/step/parser.js');
+  const m = await parseStep(await readFile(IGS, 'utf8'), 'cube.igs');
+  assert.equal(m.meta.dialect, 'IGES');
+  assert.ok(m.mesh && m.mesh.indices.length === 36, `mesh cubo attesa 12 tri, avute ${m.mesh ? m.mesh.indices.length / 3 : 0}`);
+  near(m.bounds.max.x - m.bounds.min.x, 10, 0.01);
+  near(m.bounds.max.y - m.bounds.min.y, 10, 0.01);
+  near(m.bounds.max.z - m.bounds.min.z, 10, 0.01);
 });

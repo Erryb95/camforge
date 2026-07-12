@@ -34,10 +34,12 @@ src/
   loaders/alma/       AlmaCAM XML .cn/.ctd (polilinee 3D)               [✓]
   loaders/dxf/        DXF zero-dep: LINE/ARC/CIRCLE/LWPOLYLINE(bulge)/
                       POLYLINE/ELLIPSE/SPLINE(de Boor)/INSERT, layer     [✓]
-  loaders/step/       occt-import-js (WASM vendorizzato) → spigoli
-                      caratteristici, parse ASINCRONO                    [✓]
+  loaders/step/       occt-import-js (WASM): STEP/IGES/BREP → mesh solida
+                      + spigoli sequenziati, parse ASINCRONO             [✓]
+  loaders/dwg/        libredwg-web (WASM): DWG binario → entità → segmenti [✓]
   loaders/atd/        ActTubes: solo metadati (geometria = Parasolid)    [✓]
-  loaders/dwg/        [da fare: libredwg-web WASM in vendor/]
+  loaders/cad/        geometry.js (tessellazione), sequence.js (ordine
+                      taglio), tube3d.js (tubo solido + wrap)            [✓]
   render/viewer2d.js  canvas: griglia, pan/zoom, hit-test, simulazione
   ui/codePanel.js     lista codice virtualizzata, sync bidirezionale col viewer
   ui/statsPanel.js    ingombri, lunghezze, utensili (toggle), avvisi
@@ -77,6 +79,24 @@ v = ascissa perimetrale di `(Y, Z)` sulla sezione (v=0 centro faccia superiore).
 - Una troncatura corretta spazza ~1 perimetro (196 mm per il 73×25): i test
   reali lo verificano come regressione.
 AlmaCAM: sezione tonda/rettangolare autorilevata dai raggi dei punti.
+
+## Vista 3D orbitale, solido e sequenza di taglio
+
+- **Vista 3D** (viewer2d, modo '3D'): proiezione ortografica azimut/elevazione
+  Z-up, orbita su trascinamento (Shift+trascina = pan), griglia di terra, gizmo.
+- **Solido/Filo** (`model.mesh` = {positions, indices, triTool}): rendering
+  ombreggiato painter's + luce a due facce, toggle in toolbar (solo 3D + mesh).
+  Mesh da: occt (STEP/IGES) oppure `tube3d.buildTubeMesh` (tubi NC/pgm/alma).
+- **Tubo solido**: `cad/tube3d.js` costruisce cilindro/cassone lungo l'asse e
+  avvolge i contorni via `seg.tubePts`. FATTO CHIAVE: (Y,Z) sono già coordinate
+  di sezione → punto 3D = {x:u_asse, y, z}. NC: asse=u(=X_1+X), sez=(Y,Z).
+  Alma: asse=Z, sez=(X,Y) → tubePts {x:z, y:x, z:y}.
+- **Sequenza taglio** (`cad/sequence.js`): STEP/IGES/DWG non hanno ordine di
+  taglio → si concatenano gli spigoli in contorni e si ordinano da un'estremità
+  (asse principale) per nearest-neighbor. Riduce il salto totale ~70-100×.
+  NON applicare a NC/pgm/alma: lì l'ordine del programma È la sequenza reale.
+- Campioni auto-test committati: `samples/dwg/*.dwg` (v2000-2018, LibreDWG GPL),
+  `samples/cad/cube.igs` (occt-import-js).
 
 Fuori scope (avvisato): compensazione raggio G41/G42, origini G54–G59,
 sottoprogrammi M98/M99, macro `#`.
