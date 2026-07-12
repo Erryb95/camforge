@@ -5,6 +5,7 @@
 
 import { newBounds, dist3 } from '../../core/model.js';
 import { perimeterParam, makeUnwrapper, guidesFor } from '../../core/unroll.js';
+import { buildTubeMesh } from '../cad/tube3d.js';
 
 const POLY_RE = /<Polyline3D[^>]*>([\s\S]*?)<\/Polyline3D>/g;
 const PT_RE = /<Point3D\s+X="([^"]+)"\s+Y="([^"]+)"\s+Z="([^"]+)"/g;
@@ -111,8 +112,27 @@ export function parseAlma(text, fileName = '') {
         tool: 0, feed: null, len,
       };
       if (uvPts) seg.uv = [uvPts[i - 1], uvPts[i]];
+      // 3D sul tubo: asse = Z (lunghezza), sezione = (X,Y) → (Ytubo, Ztubo)
+      if (profile) {
+        seg.tubePts = [
+          { x: from.z, y: from.x, z: from.y },
+          { x: to.z, y: to.x, z: to.y },
+        ];
+      }
       segments.push(seg);
     }
+  }
+
+  // tubo solido 3D (asse X = lunghezza del tubo, sezione nel piano Y-Z)
+  let tubeMesh = null;
+  if (profile && segments.length) {
+    let zMin = Infinity, zMax = -Infinity;
+    for (const s of segments) {
+      if (s.from.z < zMin) zMin = s.from.z; if (s.from.z > zMax) zMax = s.from.z;
+      if (s.to.z < zMin) zMin = s.to.z; if (s.to.z > zMax) zMax = s.to.z;
+    }
+    const margin = Math.max(2, (zMax - zMin) * 0.02);
+    tubeMesh = buildTubeMesh(/** @type {any} */(profile), zMin - margin, zMax + margin, 0);
   }
 
   if (profile) {
@@ -146,6 +166,7 @@ export function parseAlma(text, fileName = '') {
     warnings,
     rawLines: listing.length ? listing : ['(documento vuoto)'],
     meta,
+    mesh: tubeMesh,
     bounds: all.result(),
     boundsFeed: feedB.result(),
     stats: { feedLen, rapidLen: 0, timeMin: null, tools: [] },

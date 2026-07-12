@@ -107,9 +107,10 @@ export function createViewer(canvas, cb = {}) {
           pts[i * 2 + 1] = seg.uv[i].v;
         }
       } else if (state.view === '3D') {
-        pts = new Float64Array(seg.pts.length * 2);
-        for (let i = 0; i < seg.pts.length; i++) {
-          const [u, v] = project3d(seg.pts[i]);
+        const src = seg.tubePts || seg.pts;   // tubi: punti avvolti sul solido
+        pts = new Float64Array(src.length * 2);
+        for (let i = 0; i < src.length; i++) {
+          const [u, v] = project3d(src[i]);
           pts[i * 2] = u; pts[i * 2 + 1] = v;
         }
       } else {
@@ -138,9 +139,26 @@ export function createViewer(canvas, cb = {}) {
     return 10 * p;
   }
 
+  // estensione 3D per la griglia: usa la mesh (tubo/solido) se presente
+  function bounds3d() {
+    const m = state.model;
+    if (m && m.mesh) {
+      const P = m.mesh.positions;
+      const min = { x: Infinity, y: Infinity, z: Infinity };
+      const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+      for (let i = 0; i < P.length; i += 3) {
+        if (P[i] < min.x) min.x = P[i]; if (P[i] > max.x) max.x = P[i];
+        if (P[i + 1] < min.y) min.y = P[i + 1]; if (P[i + 1] > max.y) max.y = P[i + 1];
+        if (P[i + 2] < min.z) min.z = P[i + 2]; if (P[i + 2] > max.z) max.z = P[i + 2];
+      }
+      return { min, max };
+    }
+    return m && m.bounds;
+  }
+
   // griglia di terra sul piano XY (z=0) per la vista 3D + gizmo assi
   function draw3dScene() {
-    const b = state.model && state.model.bounds;
+    const b = bounds3d();
     if (b) {
       const step = niceStep(Math.max(b.max.x - b.min.x, b.max.y - b.min.y) / 8 || 10);
       const x0 = Math.floor(b.min.x / step) * step, x1 = Math.ceil(b.max.x / step) * step;

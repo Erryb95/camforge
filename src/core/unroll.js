@@ -1,4 +1,5 @@
 // @ts-check
+import { wrapOnTube } from '../loaders/cad/tube3d.js';
 // Sviluppo ("tubo svolto") della superficie del tubo su un piano:
 //   u = posizione assiale lungo il tubo (mm)
 //   v = ascissa curvilinea sul perimetro della sezione (mm), 0 = centro faccia superiore
@@ -174,4 +175,7 @@ export function applyTubeUnroll(segments, meta) {
   meta.unrollAvailable = true;
   meta.perimeter = profile.per;
   meta.unrollGuides = guidesFor(profile);
+
+  // costruisci il tubo solido 3D e avvolgi i contorni di taglio sopra
+  return wrapOnTube(segments, profile, meta.thickness || 0);
 }

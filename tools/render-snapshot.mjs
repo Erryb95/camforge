@@ -47,6 +47,8 @@ for (const seg of model.segments) {
   if (view === 'DEV') {
     if (!seg.uv) continue;
     pts = seg.uv.map((q) => [q.u, q.v]);
+  } else if (view === '3D') {
+    pts = (seg.tubePts || seg.pts).map(p3d);   // tubi: contorni avvolti sul solido
   } else {
     pts = seg.pts.map(PLANES[view]);
   }

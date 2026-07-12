@@ -349,9 +349,9 @@ export function parseNC(text, fileName = '') {
     st.pos = to;
   }
 
-  // sviluppo tubo (se il file ha l'header tubo): calcola seg.uv e corregge
-  // la lunghezza dei moti di sola rotazione prima delle statistiche
-  applyTubeUnroll(segments, meta);
+  // sviluppo tubo (se il file ha l'header tubo): calcola seg.uv, avvolge i
+  // contorni sul tubo solido e corregge la lunghezza dei moti di sola rotazione
+  const tubeMesh = applyTubeUnroll(segments, meta);
 
   // --- statistiche e bounds ---
   const all = newBounds();
@@ -379,6 +379,7 @@ export function parseNC(text, fileName = '') {
     warnings,
     rawLines,
     meta,
+    mesh: tubeMesh || null,
     bounds: all.result(),
     boundsFeed: feedB.result(),
     stats: {
