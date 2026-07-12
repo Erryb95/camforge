@@ -22,6 +22,18 @@ export function createStatsPanel(container, cb = {}) {
       : `${m}m ${String(s % 60).padStart(2, '0')}s`;
   }
 
+  /** Sezione dati tubo (dialetti laser tubo / AlmaCAM). */
+  function tubeSection(model) {
+    const m = model.meta || {};
+    if (!m.tubeLength && !m.tubeDiameter && !m.tubeWidth) return '';
+    let rows = '';
+    if (m.tubeName) rows += `<span class="k">Nome</span><span class="v">${esc(m.tubeName)}</span>`;
+    if (m.tubeLength) rows += `<span class="k">Lunghezza</span><span class="v">${f1(m.tubeLength)} mm</span>`;
+    if (m.tubeWidth && m.tubeHeight) rows += `<span class="k">Sezione</span><span class="v">${f1(m.tubeWidth)} × ${f1(m.tubeHeight)} mm</span>`;
+    else if (m.tubeDiameter) rows += `<span class="k">Diametro</span><span class="v">${f1(m.tubeDiameter)} mm</span>`;
+    return `<div class="info-sec"><h3>Tubo</h3><div class="kv">${rows}</div></div>`;
+  }
+
   /** @param {import('../core/model.js').SceneModel|null} model */
   function update(model) {
     hidden.clear();
@@ -39,6 +51,7 @@ export function createStatsPanel(container, cb = {}) {
         <span class="k">Segmenti</span><span class="v">${model.segments.length}</span>
         <span class="k">Fori</span><span class="v">${model.drillPoints.length}</span>
       </div></div>
+      ${tubeSection(model)}
       <div class="info-sec"><h3>Ingombro lavorato (mm)</h3><div class="kv">
         <span class="k">X</span><span class="v">${dim(bf, 'x')}</span>
         <span class="k">Y</span><span class="v">${dim(bf, 'y')}</span>

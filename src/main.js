@@ -2,6 +2,7 @@
 // Bootstrap dell'applicazione: collega loader, viewer e pannelli.
 
 import './loaders/nc/index.js';                 // registra il loader NC (+fallback)
+import './loaders/alma/index.js';               // registra il loader AlmaCAM (.cn/.ctd)
 import { parseFile } from './core/registry.js';
 import { createViewer } from './render/viewer2d.js';
 import { createCodePanel } from './ui/codePanel.js';
@@ -191,7 +192,8 @@ for (const [btn, panel] of [['btnCode', 'codePanel'], ['btnInfo', 'infoPanel']])
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement
+      || e.target instanceof HTMLButtonElement) return;
   if (e.key === 'f' || e.key === 'F') viewer.fit();
   if (e.code === 'Space') { e.preventDefault(); $('btnPlay').click(); }
 });
@@ -238,5 +240,17 @@ async function loadDemo() {
   }
 }
 
-// demo automatica al primo avvio
-loadDemo();
+// hook per test automatizzati (preview/console)
+/** @type {any} */ (window).__loadText = loadText;
+/** @type {any} */ (window).__getModel = () => model;
+
+// avvio: ?file=percorso/relativo carica un file servito dal server, altrimenti demo
+const startFile = new URLSearchParams(location.search).get('file');
+if (startFile) {
+  fetch(startFile)
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
+    .then((text) => loadText(startFile.split('/').pop() || startFile, text))
+    .catch((e) => toast(`Impossibile caricare ${startFile}: ${e.message}`));
+} else {
+  loadDemo();
+}

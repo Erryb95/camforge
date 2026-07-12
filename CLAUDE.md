@@ -28,7 +28,8 @@ server.mjs            server statico zero-dep (porta 8123)
 src/
   core/model.js       SceneModel COMUNE: Segment, DrillPoint, Bounds, stats
   core/registry.js    estensione file → loader (con fallback)
-  loaders/nc/         parser G-code → SceneModel   [fase 1 ✓]
+  loaders/nc/         parser G-code + dialetto laser tubo → SceneModel  [fase 1 ✓]
+  loaders/alma/       AlmaCAM XML .cn/.ctd (polilinee 3D)               [fase 1 ✓]
   loaders/dxf/        [fase 2 - da fare, dxf-parser vendorizzato]
   loaders/dwg/        [fase 3 - da fare, libredwg-web WASM]
   loaders/step/       [fase 3 - da fare, occt-import-js + renderer 3D]
@@ -46,12 +47,29 @@ registrato con `registerLoader([...estensioni], {name, parse})`. Niente altro ca
 ## Parser NC — copertura fase 1
 
 G0/G1/G2/G3 modali · piani G17/G18/G19 · G20/G21 · G90/G91 · archi I/J/K e R
-(cerchi completi, eliche) · cicli G81–G83 + G80 · T/M6 · F · commenti `()` e `;` ·
+(cerchi completi, eliche) · cicli G81–G89 + G80 · T/M6 · F · commenti `()` e `;` ·
 N/O/% · M30. Tutto il resto genera un **avviso con numero di riga** (mai crash):
 gli avvisi sono il punto di partenza per estendere il parser sui file reali del cliente.
 
+**Dialetto laser tubo (file .nc del cliente, stile Adige/BLM)**: header `LT<>`
+`DM<>` `WW<>/WH<>` → metadati tubo nel pannello Info · `KG10` = rapido one-shot ·
+parametri macchina multi-lettera (ZX, KA, EP…) ignorati senza avvisi · assi
+ausiliari `X_1=` · direttive `!...!` e righe `--LN/--GOTOLN` saltate ·
+`P` (rotazione tubo) parsato ma non ancora usato per la geometria.
+Idea fase 1.5: vista "tubo svolto" usando P × circonferenza.
+
 Fuori scope (avvisato): compensazione raggio G41/G42, origini G54–G59,
-sottoprogrammi M98/M99, macro `#`.
+sottoprogrammi M98/M99, macro `#`. I `.pgm` (altro controllo, con espressioni
+`X(kine_x)`) passano dal fallback NC: caricano con avvisi, dialetto da rifinire.
+Gli `.atd` (ActTubes XML) non sono ancora supportati.
+
+## Automazione test visivi
+
+- `http://localhost:8123/?file=CAD-CAM/CAD-CAM/<nome>` carica un file servito
+  (la cartella `CAD-CAM/` con i file reali è ignorata da git ma servita in locale).
+- Hook console: `window.__loadText(nome, testo)` e `window.__getModel()`.
+- Nota preview: fare screenshot con l'animazione in play va in timeout;
+  mettere in pausa o impostare lo slider via `input` event prima di catturare.
 
 ## Flusso di lavoro
 

@@ -42,6 +42,7 @@ export function createViewer(canvas, cb = {}) {
   };
 
   let w = 0, h = 0, dpr = 1;
+  let pendingFit = false;   // fit richiesto quando il canvas non era ancora misurato
 
   function resize() {
     const r = canvas.getBoundingClientRect();
@@ -49,7 +50,12 @@ export function createViewer(canvas, cb = {}) {
     dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
-    draw();
+    if (pendingFit && w > 0 && h > 0) {
+      pendingFit = false;
+      api.fit();
+    } else {
+      draw();
+    }
   }
   new ResizeObserver(resize).observe(canvas);
 
@@ -382,7 +388,7 @@ export function createViewer(canvas, cb = {}) {
   }, { passive: false });
 
   // ---------- API ----------
-  return {
+  const api = {
     setModel(model) {
       state.model = model;
       state.selected = null;
@@ -399,6 +405,7 @@ export function createViewer(canvas, cb = {}) {
       cb.onViewChange && cb.onViewChange(view);
     },
     fit() {
+      if (w <= 0 || h <= 0) { pendingFit = true; return; }
       if (!state.proj.length) { draw(); return; }
       let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
       for (const p of state.proj) {
@@ -428,4 +435,5 @@ export function createViewer(canvas, cb = {}) {
     getZoom() { return state.scale; },
     redraw: draw,
   };
+  return api;
 }

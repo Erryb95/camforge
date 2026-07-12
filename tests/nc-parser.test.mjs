@@ -145,6 +145,80 @@ test('statistiche: lunghezze e bounds', () => {
   near(m.stats.timeMin, 70 / 300, 1e-9);
 });
 
+test('dialetto tubo: KG10 rapido, parametri macchina, assi ausiliari', () => {
+  const m = parseNC([
+    'VE<1.1>',
+    'LT<5597.00>',
+    'DM<75.19>',
+    'WW<73.0> WH<25.0>',
+    'M28 ZT<4>',
+    '--GOTOLN TR+100',
+    '--LN 101',
+    '(A_T_Master_J3_B2)',
+    'KG10 X-61.1982 Y0.0002 Z47.5931 X_1=307.4498 P360.0',
+    'M20 ZX-61.1984 ZY0.0002 ZZ12.5094 EP0',
+    'M21 FS1',
+    'G1 X-60.0049 Y0.0 Z12.5001 X_1=307.45 P360.0',
+    '!GOP<WL>!',
+    'G1 X-60.0195 Y0.8537',
+  ].join('\n'));
+  assert.equal(m.warnings.length, 0, JSON.stringify(m.warnings));
+  // KG10 = rapido, poi 2 feed; la riga M20 con ZX/ZY/ZZ NON genera segmenti
+  assert.equal(m.segments.length, 3);
+  assert.equal(m.segments[0].type, 'rapid');
+  assert.equal(m.segments[1].type, 'feed');
+  near(m.segments[1].to.x, -60.0049);
+  near(m.meta.tubeLength, 5597);
+  near(m.meta.tubeDiameter, 75.19);
+  near(m.meta.tubeWidth, 73);
+});
+
+test('loader AlmaCAM: polilinee 3D e metadati tubo', async () => {
+  const { parseAlma } = await import('../src/loaders/alma/parser.js');
+  const xml = '<LXDDocument FileVer="1"><DocHeader>' +
+    '<ExtMin X="-57.15" Y="-57.15" Z="0"/><ExtMax X="57.15" Y="57.15" Z="5500"/></DocHeader>' +
+    '<Segments TubeLength="5500" TubeName="TUBE__2">' +
+    '<GeoCurve><Geometry><CompositeCurve3D><Polyline3D PointCount="3">' +
+    '<Point3D X="0" Y="0" Z="10"/><Point3D X="10" Y="0" Z="10"/><Point3D X="10" Y="5" Z="10"/>' +
+    '</Polyline3D></CompositeCurve3D></Geometry></GeoCurve>' +
+    '<GeoCurve><Geometry><CompositeCurve3D><Polyline3D PointCount="2">' +
+    '<Point3D X="0" Y="0" Z="20"/><Point3D X="0" Y="8" Z="20"/>' +
+    '</Polyline3D></CompositeCurve3D></Geometry></GeoCurve>' +
+    '</Segments></LXDDocument>';
+  const m = parseAlma(xml, 'test.cn');
+  assert.equal(m.segments.length, 3);
+  near(m.stats.feedLen, 15 + 8);
+  near(m.meta.tubeLength, 5500);
+  assert.equal(m.meta.tubeName, 'TUBE__2');
+  near(m.meta.tubeDiameter, 114.3, 1e-6);
+  assert.equal(m.warnings.length, 0);
+});
+
+// --- file reali (presenti solo sulla macchina dell'utente, non nel repo) ---
+const REAL_DIR = new URL('../CAD-CAM/CAD-CAM/', import.meta.url);
+const { existsSync } = await import('node:fs');
+const { fileURLToPath } = await import('node:url');
+const hasReal = existsSync(fileURLToPath(REAL_DIR));
+
+test('file reale: 2025-94-4.nc (laser tubo)', { skip: !hasReal }, async () => {
+  const { readFile } = await import('node:fs/promises');
+  const text = await readFile(new URL('2025-94-4.nc', REAL_DIR), 'utf8');
+  const m = parseNC(text, '2025-94-4.nc');
+  assert.ok(m.segments.length > 300, `pochi segmenti: ${m.segments.length}`);
+  assert.ok(m.warnings.length < 50, `troppi avvisi (${m.warnings.length}): ${JSON.stringify(m.warnings.slice(0, 10))}`);
+  near(m.meta.tubeLength, 5597);
+});
+
+test('file reale: TUBE__2.cn (AlmaCAM)', { skip: !hasReal }, async () => {
+  const { readFile } = await import('node:fs/promises');
+  const text = await readFile(new URL('TUBE__2.cn', REAL_DIR), 'utf8');
+  const { parseAlma } = await import('../src/loaders/alma/parser.js');
+  const m = parseAlma(text, 'TUBE__2.cn');
+  assert.ok(m.segments.length > 1000, `pochi segmenti: ${m.segments.length}`);
+  assert.equal(m.warnings.length, 0);
+  near(m.meta.tubeLength, 5500);
+});
+
 test('file demo completo senza avvisi', async () => {
   const { readFile } = await import('node:fs/promises');
   const text = await readFile(new URL('../samples/demo.nc', import.meta.url), 'utf8');

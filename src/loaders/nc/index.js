@@ -6,7 +6,7 @@ import { registerLoader } from '../../core/registry.js';
 import { parseNC } from './parser.js';
 
 registerLoader(
-  ['nc', 'gcode', 'ngc', 'tap', 'cnc', 'iso', 'eia', 'din', 'mpf', 'txt'],
+  ['nc', 'gcode', 'ngc', 'tap', 'cnc', 'iso', 'eia', 'din', 'mpf', 'pgm', 'txt'],
   { name: 'NC / G-code', parse: parseNC },
   { isFallback: true },
 );

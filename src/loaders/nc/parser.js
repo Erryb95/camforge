@@ -1,23 +1,89 @@
 // @ts-check
-// Parser G-code (ISO/Fanuc-like) -> SceneModel.
+// Parser G-code (ISO/Fanuc-like + dialetto laser tubo) -> SceneModel.
 // Supporta: G0/G1/G2/G3 (modali), piani G17/G18/G19, unità G20/G21,
 // G90/G91, archi I/J/K e R (cerchi completi ed eliche incluse),
-// cicli fissi G81/G82/G83 (+G80), T/M6, F, commenti (…) e ;, N, O, %.
+// cicli fissi G81-G89 (+G80), T/M6, F, commenti (…) e ;, N, O, %.
+// Dialetto tubo (Adige-like): KG10 come rapido, parametri macchina a più
+// lettere (ZX, KA, LT<...>), assi ausiliari X_1=, direttive !...!, righe --LN.
 // Tutto ciò che non è supportato genera un avviso con numero di riga: mai un crash.
 
 import { newBounds, dist3 } from '../../core/model.js';
 
-const WORD_RE = /([A-Za-z])\s*([+-]?\s*(?:\d+\.?\d*|\.\d+))/g;
-
 // assi (u,v) e offset di centro per ciascun piano di lavoro
 const PLANES = {
-  XY: { u: 'x', v: 'y', w: 'z', ou: 'i', ov: 'j' },
-  ZX: { u: 'z', v: 'x', w: 'y', ou: 'k', ov: 'i' },
-  YZ: { u: 'y', v: 'z', w: 'x', ou: 'j', ov: 'k' },
+  XY: { u: 'x', v: 'y', w: 'z', ou: 'I', ov: 'J' },
+  ZX: { u: 'z', v: 'x', w: 'y', ou: 'K', ov: 'I' },
+  YZ: { u: 'y', v: 'z', w: 'x', ou: 'J', ov: 'K' },
 };
 
 const CHORD_TOL = 0.02;            // errore di corda max per la tessellazione (mm)
 const MAX_ARC_STEPS = 3000;
+
+// parametri header del dialetto tubo che vale la pena esporre
+const TUBE_META = { LT: 'tubeLength', DM: 'tubeDiameter', WW: 'tubeWidth', WH: 'tubeHeight' };
+
+/**
+ * Scompone una riga (già privata di commenti) in parole standard a lettera
+ * singola (G1, X-5.2) e parametri macchina a più lettere o con suffisso
+ * (KG10, ZX-61.2, KA<10>, X_1=307.4). Ritorna null per righe da saltare.
+ * @param {string} line
+ */
+function tokenize(line) {
+  /** @type {{letter:string, value:number}[]} */
+  const words = [];
+  /** @type {Record<string, number|null>} */
+  const params = {};
+  let junk = '';
+  let i = 0;
+  const n = line.length;
+
+  while (i < n) {
+    const c = line[i];
+    if (c === ' ' || c === '\t') { i++; continue; }
+    if (c === '!') {                       // direttiva macchina !...!
+      const j = line.indexOf('!', i + 1);
+      i = j < 0 ? n : j + 1;
+      continue;
+    }
+    if (c === '-' && line[i + 1] === '-') break;   // etichetta/flow (--LN, --GOTOLN)
+    if (/[A-Za-z]/.test(c)) {
+      let j = i + 1;
+      while (j < n && /[A-Za-z]/.test(line[j])) j++;
+      let ident = line.slice(i, j).toUpperCase();
+      if (line[j] === '_') {               // asse ausiliario: X_1, Y_2…
+        let k = j + 1;
+        while (k < n && /\d/.test(line[k])) k++;
+        ident += line.slice(j, k);
+        j = k;
+      }
+      i = j;
+      while (i < n && line[i] === ' ') i++;
+      if (line[i] === '=') { i++; while (i < n && line[i] === ' ') i++; }
+      let bracket = false;
+      if (line[i] === '<') { bracket = true; i++; }
+      const m = /^[+-]?(?:\d+\.?\d*|\.\d+)/.exec(line.slice(i));
+      if (!m) {
+        if (bracket) {                     // parametro non numerico: KA<abc>
+          const j2 = line.indexOf('>', i);
+          i = j2 < 0 ? n : j2 + 1;
+          params[ident] = null;
+        } else {
+          junk += ident + ' ';             // identificatore senza valore
+        }
+        continue;
+      }
+      const value = parseFloat(m[0]);
+      i += m[0].length;
+      if (bracket && line[i] === '>') i++;
+      if (ident.length === 1) words.push({ letter: ident, value });
+      else params[ident] = value;
+    } else {
+      junk += c;
+      i++;
+    }
+  }
+  return { words, params, junk: junk.trim() };
+}
 
 /**
  * @param {string} text
@@ -36,6 +102,8 @@ export function parseNC(text, fileName = '') {
   const warnedOnce = new Set();
   /** @type {number[]} */
   const toolsSeen = [];
+  /** @type {Record<string, any>} */
+  const meta = {};
 
   const st = {
     pos: { x: 0, y: 0, z: 0 },
@@ -75,45 +143,49 @@ export function parseNC(text, fileName = '') {
     const sc = line.indexOf(';');
     if (sc >= 0) line = line.slice(0, sc);
     line = line.trim();
-    if (!line || line === '%') continue;
+    if (!line || line.startsWith('%')) continue;
 
     // macro / logica parametrica: fuori scope fase 1
-    if (line.includes('#') || /\b(IF|WHILE|GOTO|THEN|EQ|NE|LT|GT|DO\d*|END\d*)\b/i.test(line)) {
+    if (line.includes('#') || /^\?|\b(IF|WHILE|GOTO|GOTOF|GOTOB|JMPF|THEN|REPEAT)\b/i.test(line)) {
       warn(ln, 'Riga con macro/logica parametrica ignorata');
       continue;
     }
 
-    // estrazione parole
+    const { words, params, junk } = tokenize(line);
+    if (junk) warn(ln, `Testo non riconosciuto: "${junk.slice(0, 24)}"`);
+
     /** @type {Record<string, number>} */
-    const w = {};          // ultimo valore per lettera (X,Y,Z,I,J,K,R,F,S,T,N,O,P,Q,L,D,H)
+    const w = {};
     /** @type {number[]} */
     const gCodes = [];
     /** @type {number[]} */
     const mCodes = [];
-    let matched = '';
-    for (const m of line.matchAll(WORD_RE)) {
-      matched += m[0];
-      const letter = m[1].toUpperCase();
-      const value = parseFloat(m[2].replace(/\s+/g, ''));
+    for (const { letter, value } of words) {
       if (letter === 'G') gCodes.push(value);
       else if (letter === 'M') mCodes.push(value);
       else w[letter] = value;
     }
-    // testo residuo non riconosciuto?
-    const residue = line.replace(WORD_RE, '').replace(/[\s/]/g, '');
-    if (residue) warn(ln, `Testo non riconosciuto: "${residue.slice(0, 20)}"`);
+
+    // parametri header del dialetto tubo (LT<5597> DM<75.19> WW<73> WH<25>)
+    for (const [key, metaKey] of Object.entries(TUBE_META)) {
+      if (params[key] !== undefined && params[key] !== null && meta[metaKey] === undefined) {
+        meta[metaKey] = params[key];
+      }
+    }
+    // KG10 = posizionamento rapido del dialetto tubo (one-shot, non modale)
+    const oneShotRapid = params.KG !== undefined;
 
     if (w.O !== undefined && st.program === null) st.program = 'O' + w.O;
     if (w.T !== undefined) st.pendingTool = Math.round(w.T);
     if (w.F !== undefined) st.feed = mm(w.F);
 
     // --- codici G modali ---
-    let motionThisLine = /** @type {number|null} */ (null);
     let sawG28 = false;
+    let motionSeen = false;
     for (const g of gCodes) {
       if (g === 0 || g === 1 || g === 2 || g === 3) {
-        if (motionThisLine !== null) warn(ln, `Più modi di moto sulla stessa riga: vale G${g}`);
-        motionThisLine = g;
+        if (motionSeen) warn(ln, `Più modi di moto sulla stessa riga: vale G${g}`);
+        motionSeen = true;
         st.motion = g;
       } else if (g === 17) st.plane = 'XY';
       else if (g === 18) st.plane = 'ZX';
@@ -131,7 +203,7 @@ export function parseNC(text, fileName = '') {
       else if (g >= 54 && g <= 59) warn(ln, `G${g}: origine lavoro non applicata (coordinate come da programma)`, true);
       else if (g === 53) warn(ln, 'G53: coordinate macchina trattate come coordinate pezzo', true);
       else if ([4, 40, 43, 49, 61, 64, 94, 95, 98, 99, 50, 69].includes(g)) { /* innocui: ignora */ }
-      else warn(ln, `G${g} non supportato (ignorato)`);
+      else warn(ln, `G${g} non supportato (ignorato)`, true);
     }
 
     // --- codici M ---
@@ -141,7 +213,7 @@ export function parseNC(text, fileName = '') {
         else st.tool = st.pendingTool;
       } else if (m === 30 || m === 2) st.ended = true;
       else if (m === 98 || m === 99) warn(ln, `M${m}: sottoprogrammi non supportati in fase 1`, true);
-      // altri M (3,4,5,7,8,9...): non geometrici, ignorati
+      // altri M (3,4,5,7,8,9, M2x macchina...): non geometrici, ignorati
     }
     if (st.ended) continue; // dopo M30/M02 non tracciamo altro
 
@@ -178,8 +250,8 @@ export function parseNC(text, fileName = '') {
     }
 
     // --- moto normale ---
-    if (!hasCoord && !hasArcData) continue;      // riga senza geometria (solo F/S/T/M…)
-    if (st.motion === null) {
+    if (!hasCoord && !hasArcData) continue;      // riga senza geometria (solo F/S/T/M/param…)
+    if (st.motion === null && !oneShotRapid) {
       warn(ln, 'Coordinate senza modo di moto attivo (manca G0/G1/G2/G3): riga ignorata');
       continue;
     }
@@ -197,12 +269,10 @@ export function parseNC(text, fileName = '') {
 
     const implicit = !(fromSet.x || fromSet.y || fromSet.z);
 
-    if (sawG28) {
-      warn(ln, 'G28/G30: ritorno al riferimento tracciato come rapido', true);
-    }
+    if (sawG28) warn(ln, 'G28/G30: ritorno al riferimento tracciato come rapido', true);
 
-    if (st.motion === 0 || st.motion === 1 || sawG28) {
-      const type = st.motion === 1 && !sawG28 ? 'feed' : 'rapid';
+    if (oneShotRapid || st.motion === 0 || st.motion === 1 || sawG28) {
+      const type = !oneShotRapid && st.motion === 1 && !sawG28 ? 'feed' : 'rapid';
       const len = dist3(from, to);
       if (len > 1e-9) {
         segments.push({
@@ -258,6 +328,7 @@ export function parseNC(text, fileName = '') {
     drillPoints,
     warnings,
     rawLines,
+    meta,
     bounds: all.result(),
     boundsFeed: feedB.result(),
     stats: {
@@ -313,8 +384,8 @@ function buildArc(st, from, to, w, cw, ln, warn) {
     if (!chosen) chosen = cands[0];
     cu = chosen.cu; cv = chosen.cv; radius = r;
   } else if (w.I !== undefined || w.J !== undefined || w.K !== undefined) {
-    const offU = w[pl.ou.toUpperCase()] !== undefined ? mm(w[pl.ou.toUpperCase()]) : 0;
-    const offV = w[pl.ov.toUpperCase()] !== undefined ? mm(w[pl.ov.toUpperCase()]) : 0;
+    const offU = w[pl.ou] !== undefined ? mm(w[pl.ou]) : 0;
+    const offV = w[pl.ov] !== undefined ? mm(w[pl.ov]) : 0;
     cu = su + offU;
     cv = sv + offV;
     const r0 = Math.hypot(su - cu, sv - cv);
