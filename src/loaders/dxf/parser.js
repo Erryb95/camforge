@@ -6,8 +6,8 @@
 // codice mostra il testo DXF reale, sincronizzato per entità.
 
 import { newBounds, dist3 } from '../../core/model.js';
+import { IDENT, mul, apply, arcPoints, bulgePolyline, ellipsePoints, splinePoints } from '../cad/geometry.js';
 
-const ARC_STEP = Math.PI / 90;      // 2° di passo max per la tessellazione
 const MAX_INSERT_DEPTH = 8;
 
 /**
@@ -127,20 +127,7 @@ export function parseDXF(text, fileName = '') {
     return /** @type {number} */ (layerTool.get(name));
   };
 
-  // ---------- trasformazioni 2D (per INSERT) ----------
-  /** matrice [a,b,c,d,e,f]: x' = a·x + c·y + e ; y' = b·x + d·y + f */
-  const IDENT = [1, 0, 0, 1, 0, 0];
-  const mul = (m, n) => [
-    m[0] * n[0] + m[2] * n[1],
-    m[1] * n[0] + m[3] * n[1],
-    m[0] * n[2] + m[2] * n[3],
-    m[1] * n[2] + m[3] * n[3],
-    m[0] * n[4] + m[2] * n[5] + m[4],
-    m[1] * n[4] + m[3] * n[5] + m[5],
-  ];
-  const apply = (m, x, y) => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
-
-  // ---------- helper geometrici ----------
+  // ---------- helper di lettura group-code ----------
   const val = (data, code, def = null) => {
     for (const [c, v] of data) if (c === code) return parseFloat(v);
     return def;
@@ -163,82 +150,7 @@ export function parseDXF(text, fileName = '') {
     }
   }
 
-  /** Punti di un arco (in coordinate locali, PRIMA della trasformazione). */
-  function arcPoints(cx, cy, r, a0, sweep) {
-    const steps = Math.max(2, Math.min(720, Math.ceil(Math.abs(sweep) / ARC_STEP)));
-    const pts = [];
-    for (let i = 0; i <= steps; i++) {
-      const a = a0 + (sweep * i) / steps;
-      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
-    }
-    return pts;
-  }
-
-  /** Espande i vertici con bulge in una sequenza di punti tessellati. */
-  function bulgePolyline(verts, closed, line) {
-    /** @type {number[][]} */
-    const out = [];
-    const n = verts.length;
-    if (!n) return out;
-    out.push([verts[0].x, verts[0].y]);
-    const last = closed ? n : n - 1;
-    for (let i = 0; i < last; i++) {
-      const a = verts[i];
-      const b = verts[(i + 1) % n];
-      if (!a.bulge) {
-        out.push([b.x, b.y]);
-        continue;
-      }
-      const theta = 4 * Math.atan(a.bulge);
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const d = Math.hypot(dx, dy);
-      if (d < 1e-12) continue;
-      const r = d / (2 * Math.sin(Math.abs(theta) / 2));
-      const phi = Math.atan2(dy, dx);
-      const cAng = phi + (Math.PI / 2) * Math.sign(theta) - theta / 2;
-      const cx = a.x + r * Math.cos(cAng);
-      const cy = a.y + r * Math.sin(cAng);
-      const a0 = Math.atan2(a.y - cy, a.x - cx);
-      const pts = arcPoints(cx, cy, r, a0, theta);
-      for (let k = 1; k < pts.length; k++) out.push(pts[k]);
-      out[out.length - 1] = [b.x, b.y];  // chiudi esatto
-    }
-    return out;
-  }
-
-  /** Valutazione B-spline (de Boor) sui punti di controllo. */
-  function splinePoints(ctrl, knots, degree, line) {
-    if (ctrl.length < 2) return [];
-    if (!knots.length || knots.length !== ctrl.length + degree + 1) {
-      warn(line, 'SPLINE: nodi incoerenti, approssimata con il poligono di controllo');
-      return ctrl.map((p) => [p[0], p[1]]);
-    }
-    const nSamp = Math.min(600, Math.max(32, ctrl.length * 8));
-    const t0 = knots[degree];
-    const t1 = knots[knots.length - 1 - degree];
-    const out = [];
-    for (let s = 0; s <= nSamp; s++) {
-      const t = t0 + ((t1 - t0) * s) / nSamp;
-      // trova lo span k: knots[k] <= t < knots[k+1]
-      let k = degree;
-      for (let j = degree; j < knots.length - 1 - degree; j++) {
-        if (t >= knots[j] && t <= knots[j + 1]) { k = j; break; }
-      }
-      const d = [];
-      for (let j = 0; j <= degree; j++) d[j] = [...ctrl[k - degree + j]];
-      for (let r = 1; r <= degree; r++) {
-        for (let j = degree; j >= r; j--) {
-          const i2 = k - degree + j;
-          const den = knots[i2 + degree - r + 1] - knots[i2];
-          const alpha = den < 1e-12 ? 0 : (t - knots[i2]) / den;
-          d[j][0] = (1 - alpha) * d[j - 1][0] + alpha * d[j][0];
-          d[j][1] = (1 - alpha) * d[j - 1][1] + alpha * d[j][1];
-        }
-      }
-      out.push([d[degree][0], d[degree][1]]);
-    }
-    return out;
-  }
+  // arcPoints, bulgePolyline, ellipsePoints, splinePoints: da ../cad/geometry.js
 
   // ---------- emissione entità ----------
   let entityCount = 0;
@@ -280,7 +192,7 @@ export function parseDXF(text, fileName = '') {
           else if (c === 20 && cur) cur.y = parseFloat(v);
           else if (c === 42 && cur) cur.bulge = parseFloat(v);
         }
-        emitPolyline(bulgePolyline(verts, closed, ent.line).map(([x, y]) => T(x, y)), layer, ent.line);
+        emitPolyline(bulgePolyline(verts, closed).map(([x, y]) => T(x, y)), layer, ent.line);
         break;
       }
       case 'POINT': {
@@ -298,16 +210,7 @@ export function parseDXF(text, fileName = '') {
         const mx = val(ent.data, 11, 1), my = val(ent.data, 21, 0);
         const ratio = val(ent.data, 40, 1);
         const p0 = val(ent.data, 41, 0), p1 = val(ent.data, 42, Math.PI * 2);
-        const nx = -my * ratio, ny = mx * ratio;
-        const steps = 96;
-        const pts = [];
-        const span = p1 > p0 ? p1 - p0 : p1 + Math.PI * 2 - p0;
-        for (let i = 0; i <= steps; i++) {
-          const t = p0 + (span * i) / steps;
-          pts.push(T(cx + mx * Math.cos(t) + nx * Math.sin(t),
-                     cy + my * Math.cos(t) + ny * Math.sin(t)));
-        }
-        emitPolyline(pts, layer, ent.line);
+        emitPolyline(ellipsePoints(cx, cy, mx, my, ratio, p0, p1).map(([x, y]) => T(x, y)), layer, ent.line);
         break;
       }
       case 'SPLINE': {
@@ -321,7 +224,7 @@ export function parseDXF(text, fileName = '') {
           const cxs = vals(ent.data, 10), cys = vals(ent.data, 20);
           const ctrl = cxs.map((x, i) => [x, cys[i] ?? 0]);
           if (vals(ent.data, 43).length) warn(ent.line, 'SPLINE razionale (pesi 43): approssimata senza pesi', true);
-          pts = splinePoints(ctrl, vals(ent.data, 40), degree, ent.line);
+          pts = splinePoints(ctrl, vals(ent.data, 40), degree, (msg) => warn(ent.line, msg));
         }
         emitPolyline(pts.map(([x, y]) => T(x, y)), layer, ent.line);
         break;
@@ -370,7 +273,7 @@ export function parseDXF(text, fileName = '') {
             bulge: val(list[j].data, 42, 0) || 0,
           });
         }
-        emitPolyline(bulgePolyline(verts, closed, ent.line).map(([x, y]) => apply(m, x, y)),
+        emitPolyline(bulgePolyline(verts, closed).map(([x, y]) => apply(m, x, y)),
           str(ent.data, 8, '0'), ent.line);
         entityCount++;
         i = j;

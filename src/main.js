@@ -5,8 +5,9 @@ import './loaders/nc/index.js';                 // registra il loader NC (+fallb
 import './loaders/alma/index.js';               // registra il loader AlmaCAM (.cn/.ctd)
 import './loaders/dxf/index.js';                // registra il loader DXF
 import './loaders/step/index.js';               // registra il loader STEP (async, WASM)
+import './loaders/dwg/index.js';                // registra il loader DWG (async, WASM, binario)
 import './loaders/atd/index.js';                // registra il loader ActTubes (.atd)
-import { parseFile } from './core/registry.js';
+import { parseFile, isBinaryExt } from './core/registry.js';
 import { createViewer } from './render/viewer2d.js';
 import { createCodePanel } from './ui/codePanel.js';
 import { createStatsPanel } from './ui/statsPanel.js';
@@ -107,7 +108,10 @@ async function loadText(fileName, text) {
 }
 
 async function loadFile(file) {
-  loadText(file.name, await file.text());
+  const content = isBinaryExt(file.name)
+    ? new Uint8Array(await file.arrayBuffer())
+    : await file.text();
+  loadText(file.name, content);
 }
 
 // ---------- tooltip segmento ----------
@@ -274,9 +278,10 @@ async function loadDemo() {
 // avvio: ?file=percorso/relativo carica un file servito dal server, altrimenti demo
 const startFile = new URLSearchParams(location.search).get('file');
 if (startFile) {
+  const name = startFile.split('/').pop() || startFile;
   fetch(startFile)
-    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
-    .then((text) => loadText(startFile.split('/').pop() || startFile, text))
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r; })
+    .then(async (r) => loadText(name, isBinaryExt(name) ? new Uint8Array(await r.arrayBuffer()) : await r.text()))
     .catch((e) => toast(`Impossibile caricare ${startFile}: ${e.message}`));
 } else {
   loadDemo();

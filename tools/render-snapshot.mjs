@@ -8,8 +8,9 @@ import '../src/loaders/nc/index.js';
 import '../src/loaders/alma/index.js';
 import '../src/loaders/dxf/index.js';
 import '../src/loaders/step/index.js';
+import '../src/loaders/dwg/index.js';
 import '../src/loaders/atd/index.js';
-import { parseFile } from '../src/core/registry.js';
+import { parseFile, isBinaryExt } from '../src/core/registry.js';
 
 const [, , input, output, view = 'DEV', W = '1200', H = '700'] = process.argv;
 if (!input || !output) {
@@ -18,8 +19,11 @@ if (!input || !output) {
 }
 const w = parseInt(W, 10), h = parseInt(H, 10);
 
-const text = await readFile(input, 'utf8');
-const res = parseFile(input.split(/[\\/]/).pop(), text);
+const baseName = input.split(/[\\/]/).pop();
+const content = isBinaryExt(baseName)
+  ? new Uint8Array(await readFile(input))
+  : await readFile(input, 'utf8');
+const res = parseFile(baseName, content);
 const model = await Promise.resolve(res.model);
 
 // --- proiezione ---
