@@ -123,7 +123,11 @@ parametri tubo** (`#rotaryDlg`):
   fallback lineare; **overcut** (overburn) solo sui fori per chiuderli puliti (default
   QtPlasmaC `#<oclength>` = 4 mm).
 - **Preset materiale/spessore** con **dati reali Hypertherm Powermax SYNC** (doc 810500MU
-  R4, aria): kerf/feed/pierce per acciaio dolce 1–10 mm (`MILD_STEEL_PLASMA`).
+  R4, aria): **acciaio dolce · inox 304 · alluminio** (kerf/feed/pierce/arc-volts per spessore).
+- **Export material file QtPlasmaC** (`.cfg`, `src/generator/plasmacMaterial.js`): genera le
+  sezioni `[MATERIAL_NUMBER_x]` (KERF_WIDTH/PIERCE_HEIGHT/PIERCE_DELAY/CUT_HEIGHT/CUT_SPEED/
+  CUT_AMPS/CUT_VOLTS/…) da caricare in config e richiamare con `M190 P<n>` — colma il fatto
+  che LinuxCNC **non ha un database ufficiale** di parametri (si compilano a mano dai cut chart).
 - **Feed corretto sui moti rotativi**: G-code in **G93 inverse-time** (`F = 1/T`, T = lunghezza
   superficie/velocità) → la velocità di taglio rispetta le cut chart su moti assiali, di sola
   rotazione e misti (F in mm/min su un moto di sola A verrebbe letto come gradi/min).

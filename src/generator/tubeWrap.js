@@ -16,7 +16,7 @@ import { profileFromMeta, guidesFor } from '../core/unroll.js';
 import { buildTubeMesh } from '../loaders/cad/tube3d.js';
 import { postRotaryPlasmaC } from './post/plasmac.js';
 import { closedRingsFromDxf } from './dxfmill.js';
-import { applyKerfAndLeads, cutParamsFor } from './rotaryCut.js';
+import { applyKerfAndLeads, cutParamsFor, materialEntries } from './rotaryCut.js';
 
 /**
  * @typedef {import('./post/plasmac.js').UV} UV
@@ -317,7 +317,7 @@ export function dxfDesignExtent(model) {
  * Applica kerf compensation (± kerf/2 secondo il contenimento) + lead-in/out.
  * feed/kerf/pierce di default vengono dal preset plasma per lo spessore.
  * @param {import('../core/model.js').SceneModel} dxfModel
- * @param {Partial<TubeSpec> & {feed?:number, thickness?:number, kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number, topology?:'auto'|'tube'|'sheet', material?:number|null, name?:string, leadIn?:number, margin?:number}} opts
+ * @param {Partial<TubeSpec> & {feed?:number, thickness?:number, materialKey?:string, kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number, topology?:'auto'|'tube'|'sheet', material?:number|null, name?:string, leadIn?:number, margin?:number}} opts
  * @returns {Promise<{model:import('../core/model.js').SceneModel, gcode:string, name:string, tube:TubeSpec, info:string}>}
  */
 export async function wrapDxfToRotary(dxfModel, opts = {}) {
@@ -340,9 +340,9 @@ export async function wrapDxfToRotary(dxfModel, opts = {}) {
   const length = opts.length ?? (uMax - uMin + 2 * margin);
   const tube = { diameter, length };
 
-  // preset di taglio dal materiale/spessore (kerf/feed/pierce), con override
+  // preset di taglio dalla lega + spessore (kerf/feed/pierce), con override
   const thickness = opts.thickness ?? 2;
-  const preset = cutParamsFor(thickness);
+  const preset = cutParamsFor(thickness, materialEntries(opts.materialKey || 'mild_steel'));
   const kerf = opts.kerf ?? preset.kerf;
   const feed = opts.feed ?? preset.feed;
 

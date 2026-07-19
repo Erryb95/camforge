@@ -20,7 +20,7 @@ import { foldMeshFromCenterline } from './sim/tubebend.js';  // PIEGATURA tubo: 
 import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pezzo 3D: mesh → percorso raster
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
-import { MILD_STEEL_PLASMA, cutParamsFor, PLASMA_MATERIALS } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per spessore
+import { cutParamsFor, PLASMA_MATERIALS, materialEntries } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per lega+spessore
 import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
 import { MATERIALS, DEFAULT_MATERIAL, materialById, coatingColor } from './sim/materials.js';   // materiali + punta per materiale
 import { LaserTubeSim, outwardNormalAt } from './sim/lasertube.js';   // taglio LASER tubo (troncatura=stacco assiale)
@@ -628,15 +628,24 @@ $('btnDemoRotary').addEventListener('click', () => {
 // compensation + lead-in/out e avvolge il disegno sul tubo per la simulazione.
 (function initRotaryDlg() {
   const dlg = $('rotaryDlg');
+  const alloySel = /** @type {HTMLSelectElement} */ ($('rAlloy'));
   const mat = /** @type {HTMLSelectElement} */ ($('rMat'));
-  // popola i materiali/spessori dal preset plasma
-  mat.innerHTML = MILD_STEEL_PLASMA.map((p) => `<option value="${p.t}">Acciaio dolce ${p.t} mm (${p.amps}A)</option>`).join('');
+  // popola le leghe disponibili (mappa PLASMA_MATERIALS)
+  alloySel.innerHTML = Object.values(PLASMA_MATERIALS).map((a) => `<option value="${a.key}">${a.label}</option>`).join('');
   const applyPreset = () => {
-    const p = cutParamsFor(parseFloat(mat.value));
+    const p = cutParamsFor(parseFloat(mat.value), materialEntries(alloySel.value));
     /** @type {HTMLInputElement} */ ($('rKerf')).value = String(p.kerf);
     /** @type {HTMLInputElement} */ ($('rFeed')).value = String(p.feed);
   };
+  // ricostruisce gli spessori dalla lega scelta, poi applica il preset
+  const rebuildThickness = () => {
+    const entries = materialEntries(alloySel.value);
+    mat.innerHTML = entries.map((p) => `<option value="${p.t}">${p.t} mm (${p.amps}A)</option>`).join('');
+    applyPreset();
+  };
+  alloySel.addEventListener('change', rebuildThickness);
   mat.addEventListener('change', applyPreset);
+  rebuildThickness();
   const close = () => { dlg.hidden = true; };
   $('rotaryCancel').addEventListener('click', close);
   dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
@@ -675,6 +684,7 @@ $('btnDemoRotary').addEventListener('click', () => {
     if (!(diameter > 0)) { toast('Diametro non valido'); return; }
     const lenRaw = parseFloat(/** @type {HTMLInputElement} */ ($('rLen')).value);
     const thickness = parseFloat(mat.value);
+    const materialKey = alloySel.value;
     const kerf = parseFloat(/** @type {HTMLInputElement} */ ($('rKerf')).value);
     const feed = parseFloat(/** @type {HTMLInputElement} */ ($('rFeed')).value);
     const lead = /** @type {HTMLSelectElement} */ ($('rLead')).value;
@@ -687,7 +697,7 @@ $('btnDemoRotary').addEventListener('click', () => {
     try {
       const { model: m, gcode, name, info } = await wrapDxfToRotary(rotarySrc, {
         diameter, length: Number.isFinite(lenRaw) ? lenRaw : undefined,
-        thickness, kerf: Number.isFinite(kerf) ? kerf : undefined,
+        thickness, materialKey, kerf: Number.isFinite(kerf) ? kerf : undefined,
         feed: Number.isFinite(feed) ? feed : undefined,
         lead: /** @type {any} */ (lead), leadLen: Number.isFinite(leadLen) ? leadLen : undefined,
         overcut: Number.isFinite(overcut) ? overcut : 0, topology: /** @type {any} */ (topology),

@@ -30,12 +30,45 @@ export const MILD_STEEL_PLASMA = [
 ];
 
 /**
- * Materiali plasma disponibili (mappa alloy → tabella spessori). Inox e alluminio
- * vengono popolati con dati reali da cut chart produttori.
+ * ACCIAIO INOX (AISI 304) — Hypertherm Powermax SYNC (810500MU R4, aria, colonna
+ * Best Quality; backbone 65A + 45A a 1 mm). Include arc voltage (CUT_VOLTS).
+ * @type {typeof MILD_STEEL_PLASMA}
+ */
+export const STAINLESS_PLASMA = [
+  { t: 1, kerf: 0.8, feed: 8890, pierce: 0.1, amps: 45, volts: 134 },
+  { t: 2, kerf: 0.8, feed: 8760, pierce: 0.1, amps: 65, volts: 132 },
+  { t: 3, kerf: 1.1, feed: 7650, pierce: 0.1, amps: 65, volts: 132 },
+  { t: 4, kerf: 1.3, feed: 5160, pierce: 0.1, amps: 65, volts: 133 },
+  { t: 5, kerf: 1.45, feed: 3800, pierce: 0.15, amps: 65, volts: 133 },   // interpolato (la chart salta da 4 a 6)
+  { t: 6, kerf: 1.6, feed: 2440, pierce: 0.2, amps: 65, volts: 133 },
+  { t: 8, kerf: 1.8, feed: 1350, pierce: 0.5, amps: 65, volts: 135 },
+  { t: 10, kerf: 2.0, feed: 940, pierce: 0.7, amps: 65, volts: 137 },
+];
+
+/**
+ * ALLUMINIO — Hypertherm Powermax SYNC (810500MU R4, aria, torcia 45A per tutto
+ * il range). Include arc voltage. (La chart non ha la riga a 5 mm.)
+ * @type {typeof MILD_STEEL_PLASMA}
+ */
+export const ALUMINUM_PLASMA = [
+  { t: 1, kerf: 1.5, feed: 8300, pierce: 0, amps: 45, volts: 140 },
+  { t: 2, kerf: 1.2, feed: 6400, pierce: 0.1, amps: 45, volts: 139 },
+  { t: 3, kerf: 1.1, feed: 4400, pierce: 0.1, amps: 45, volts: 142 },
+  { t: 4, kerf: 1.1, feed: 3650, pierce: 0.1, amps: 45, volts: 143 },
+  { t: 6, kerf: 1.0, feed: 2050, pierce: 0.2, amps: 45, volts: 146 },
+  { t: 8, kerf: 1.2, feed: 1330, pierce: 0.5, amps: 45, volts: 147 },
+  { t: 10, kerf: 1.3, feed: 860, pierce: 0.8, amps: 45, volts: 148 },
+];
+
+/**
+ * Materiali plasma disponibili (mappa alloy → tabella spessori). Dati reali dai
+ * cut chart Hypertherm Powermax SYNC (doc 810500MU R4, aria).
  * @type {Record<string, {key:string, label:string, gas:string, entries:typeof MILD_STEEL_PLASMA}>}
  */
 export const PLASMA_MATERIALS = {
   mild_steel: { key: 'mild_steel', label: 'Acciaio dolce', gas: 'aria', entries: MILD_STEEL_PLASMA },
+  stainless: { key: 'stainless', label: 'Inox 304', gas: 'aria', entries: STAINLESS_PLASMA },
+  aluminum: { key: 'aluminum', label: 'Alluminio', gas: 'aria', entries: ALUMINUM_PLASMA },
 };
 
 /** Tabella spessori per un materiale (fallback acciaio dolce). @param {string} key */

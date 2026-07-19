@@ -122,6 +122,19 @@ test('material file QtPlasmaC: formato + campi obbligatori + valori dal preset',
   assert.equal(m4.pierceHeight, 3.8);       // 2.5 × cut height 1.5
 });
 
+test('materiali multipli: inox e alluminio con dati reali + volts nel material file', () => {
+  const inox = materialFileForAlloy('stainless');
+  const alu = materialFileForAlloy('aluminum');
+  // inox 4 mm: kerf 1.3, feed 5160, volts 133 (Hypertherm 65A)
+  const i4 = inox.materials.find((m) => m.name.includes('4 mm'));
+  assert.equal(i4.kerf, 1.3); assert.equal(i4.cutSpeed, 5160); assert.equal(i4.cutVolts, 133);
+  assert.ok(/^CUT_VOLTS\s+= 133$/m.test(inox.text));
+  // alluminio 3 mm: kerf 1.1, feed 4400, volts 142
+  const a3 = alu.materials.find((m) => m.name.includes('3 mm'));
+  assert.equal(a3.kerf, 1.1); assert.equal(a3.cutSpeed, 4400); assert.equal(a3.cutVolts, 142);
+  assert.ok(inox.alloy === 'Inox 304' && alu.alloy === 'Alluminio');
+});
+
 test('presetToMaterial: numero e nome coerenti', () => {
   const m = presetToMaterial({ t: 6, kerf: 1.5, feed: 2570, pierce: 0.2, amps: 65 }, { number: 3, alloyLabel: 'Acciaio dolce' });
   assert.equal(m.number, 3);
