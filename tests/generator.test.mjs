@@ -56,3 +56,32 @@ test('STEP→NC generato ≈ TUBE1.cn reale (geometria)', { skip: !ready, timeou
     near(gen.bounds.max[ax], real.bounds.max[ax], 1.5);
   }
 });
+
+test('TUBE4: asole estratte come contorni veri + sequenza front→feature→back', { skip: !ready, timeout: 120000 }, async () => {
+  const { extractBrep } = await import('../src/loaders/step/brep.js');
+  const { featuresFromBrep } = await import('../src/generator/features.js');
+  const feat = featuresFromBrep(await extractBrep(await readFile(fileURLToPath(new URL('TUBE4.step', DIR)), 'utf8')));
+  assert.ok(feat.slots.length >= 1, `attese asole, trovate ${feat.slots.length}`);
+  // un'asola NON è un cerchio: il suo loop ha punti (archi+linee)
+  assert.ok(feat.slots[0].pts.length > 8);
+
+  const nc = generateTubeNc(feat);
+  // sequenza: la prima op è il taglio di testa anteriore, l'ultima il posteriore
+  const labels = [...nc.matchAll(/^;(W_T_\w+)/gm)].map((m) => m[1]);
+  assert.ok(labels[0].startsWith('W_T_Master'), labels[0]);
+  assert.ok(labels[labels.length - 1].startsWith('W_T_Master'), labels.at(-1));
+  assert.ok(labels.slice(1, -1).every((l) => !l.startsWith('W_T_Master')), 'feature tra i due tagli di testa');
+  // approccio in rapido prima di ogni contorno (nessun taglio tra le op)
+  const nOps = labels.length;
+  const nRapid = (nc.match(/^G0 X/gm) || []).length;
+  assert.equal(nRapid, nOps);
+
+  const gen = parseNC(nc, 'gen.cn');
+  const real = parseNC(await readFile(fileURLToPath(new URL('TUBE4.cn', DIR)), 'utf8'), 'TUBE4.cn');
+  assert.equal(gen.meta.tubeWidth, real.meta.tubeWidth);
+  assert.equal(gen.meta.tubeHeight, real.meta.tubeHeight);
+  for (const ax of ['x', 'y', 'z']) {
+    near(gen.bounds.min[ax], real.bounds.min[ax], 1.5);
+    near(gen.bounds.max[ax], real.bounds.max[ax], 1.5);
+  }
+});

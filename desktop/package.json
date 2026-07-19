@@ -1,0 +1,62 @@
+{
+  "name": "cad-cam-visual-lge-desktop",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Guscio desktop (Electron) del CAD/CAM Viewer LGE — sandbox eseguibile offline, in parallelo al sito.",
+  "author": "LGE — CAD/CAM Viewer",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis portable",
+    "dist:portable": "electron-builder --win portable",
+    "dist:dir": "electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.lge.cadcamviewer",
+    "productName": "CAD-CAM Viewer LGE",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "build/icon.ico"],
+    "extraResources": [
+      { "from": "../index.html", "to": "web/index.html" },
+      { "from": "../serve.mjs", "to": "web/serve.mjs" },
+      { "from": "../src", "to": "web/src" },
+      { "from": "../vendor", "to": "web/vendor" },
+      { "from": "../samples", "to": "web/samples" }
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "fileAssociations": [
+      { "ext": "nc", "name": "Programma NC / G-code", "role": "Viewer" },
+      { "ext": "ngc", "name": "Programma NC (LinuxCNC)", "role": "Viewer" },
+      { "ext": "gcode", "name": "G-code", "role": "Viewer" },
+      { "ext": "tap", "name": "Programma NC (.tap)", "role": "Viewer" },
+      { "ext": "cnc", "name": "Programma NC (.cnc)", "role": "Viewer" },
+      { "ext": "mpf", "name": "Programma NC (Sinumerik)", "role": "Viewer" },
+      { "ext": "pgm", "name": "Programma NC (Cutlite)", "role": "Viewer" },
+      { "ext": "cn", "name": "Tubo AlmaCAM/NC (.cn)", "role": "Viewer" },
+      { "ext": "ctd", "name": "Tubo AlmaCAM (.ctd)", "role": "Viewer" },
+      { "ext": "atd", "name": "ActTubes (.atd)", "role": "Viewer" },
+      { "ext": "dxf", "name": "Disegno DXF", "role": "Viewer" },
+      { "ext": "dwg", "name": "Disegno DWG", "role": "Viewer" },
+      { "ext": "stp", "name": "Modello STEP", "role": "Viewer" },
+      { "ext": "step", "name": "Modello STEP", "role": "Viewer" },
+      { "ext": "igs", "name": "Modello IGES", "role": "Viewer" },
+      { "ext": "iges", "name": "Modello IGES", "role": "Viewer" }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
+  }
+}

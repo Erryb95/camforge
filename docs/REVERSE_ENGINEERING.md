@@ -58,19 +58,55 @@ Mapping confermato: **X_NC = −X_STEP − trim** (front −4.95 ↔ STEP 0; for
 STEP 125; back −255 ↔ STEP 250). **C = atan2(normale_Y, normale_Z)°** (verificato:
 punto con EJ0.63/EK0.77 → C≈39.3°). EI=0 sui tagli radiali.
 
-## 5. Generatore STEP → NC — FATTO (validato su TUBE1)
+## 5. Generatore STEP → NC — FATTO (validato su TUBE1 **e TUBE4**)
 
 `src/generator/`: `features.js` (B-rep → sezione W×H, raggio spigoli, lunghezza,
-fori radiali) + `tubeNc.js` (emette il dialetto: header G2292, tagli di testa che
-tracciano `sectionPath()`, fori come cerchi, con mapping X/C/normali di sopra).
-Validazione (tests/generator.test.mjs): da TUBE1.step estrae feature esatte
-(40×40 r3, foro Ø20 a X=125) e genera un NC la cui **sezione e ingombro coincidono**
-con TUBE1.cn reale (match visivo 3D/svolto). Il numero di punti differisce solo per
-densità di tessellazione.
+tagli della superficie) + `tubeNc.js` (emette il dialetto: header G2292, tagli di
+testa che tracciano `sectionPath()`, feature, con mapping X/C/normali di sopra).
 
-**Ancora da fare**: asole/slot (archi+linee, non cerchi), sequenza/lead-in/tecnologia
-per materiale×spessore, e — se serve byte-exact — i valori C/feed del post reale
-(dipendono dal post-processor proprietario, non ricavabili dalla sola geometria).
+**Asole/slot (fatto)**: i tagli NON vengono più ricostruiti dai cilindri, ma dai
+**wire interni delle facce esterne** del B-rep (`src/loaders/step/wires.js`,
+`BRepTools_WireExplorer` = edge in ordine di connessione → contorno continuo;
+`BRepTools.OuterWire` = wire esterno; l'orientamento è `shape.Orientation_1()`
+in questo build emscripten). `features.js` fa il fit di cerchio su ogni loop:
+cerchio → foro (centro+raggio), altro → ASOLA come contorno esatto (2 archi+2
+linee). Fallback storico sui cilindri se i loop mancano. Validato su TUBE4
+(2 asole, di cui una a cavallo della cucitura): tests/generator.test.mjs.
+
+**Sequenza (fatto)**: testa ANTERIORE prima → feature interne ordinate lungo la
+barra → testa POSTERIORE per ULTIMA (il pezzo resta attaccato fino alla fine).
+Il punto d'attacco dei contorni chiusi è ruotato verso la posizione precedente
+(endpoint cutting problem) e ogni op inizia con un **G0 di approccio in rapido**:
+nessun moto di taglio tra un contorno e il successivo, ogni contorno UNA passata.
+
+**Ancora da fare**: tecnologia per materiale×spessore (G510/G650 reali) e — se
+serve byte-exact — i valori C/feed del post proprietario.
+
+## 6. Post-processor 2D (piastre) e pipeline dimostrativa
+
+- `src/generator/toolpath.js`: IR CAM 2D — contenimento (interni PRIMA del
+  perimetro), nearest-neighbor, rotazione punto di partenza, **lead-in dal lato
+  sfrido** (dentro il foro / fuori dal perimetro).
+- `src/generator/post/gcode.js`: post GRBL e LinuxCNC **adattati dai post
+  ufficiali FreeCAD CAM** (LGPL, copie in `vendor/reference/freecad-posts/`),
+  incluso il pierce delay del post plasma (~70 ms/mm, min 0.5 s).
+- `tools/make-demo-plate.mjs`: genera `samples/cad/plate-demo.step`
+  (120×80×4, 5 fori + 1 asola) con occt-full + STEPControl_Writer.
+- `tools/step2nc.mjs`: STEP → NC end-to-end (`--post grbl|linuxcnc|cutlite`),
+  auto-verifica `--check` col nostro parser. Output demo in `samples/generated/`.
+- e2e in tests/post.test.mjs: 7 contorni estratti, ordine corretto, NC parsabile
+  senza avvisi, ingombro = piastra.
+
+## 7. Svolto per file CAD 3D (.stp/.step/.igs)
+
+`src/loaders/cad/tubeDetect.js`: rileva il tubo dalla nuvola di segmenti (asse
+PCA — i pezzi non sono axis-aligned — sezione tonda se raggio ~costante al 95°
+percentile, altrimenti rettangolare da PCA 2D del piano trasversale; guardia
+lunghezza > 2.2×sezione), poi calcola `seg.uv` con `perimeterParam`. La vista
+Svolto dei renderer (ripiegatura a UNA sezione + stacco alla cucitura) vale
+quindi anche per gli STEP: TUBE1.step ≈ TUBE1.cn (perimetro/guide identici,
+tests/tube-detect.test.mjs). La banda della faccia è definita a meno di
+rotazioni di 90° (da pura geometria non esiste un "top" canonico).
 
 ### (storico) note iniziali
 Serve replicare la struttura §2: per ogni contorno estratto (dallo STEP o dal disegno)

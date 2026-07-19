@@ -98,6 +98,9 @@ main { flex: 1; display: flex; min-height: 0; }
 .row.sel .ln { color: var(--accent); }
 .row.match { background: #3a3410; }
 .row.match-cur { background: #6b5a12; }
+/* riga in esecuzione durante la simulazione del percorso */
+.row.run { background: #17372a; box-shadow: inset 3px 0 0 #43aa8b; }
+.row.run .ln { color: #43aa8b; }
 
 /* ---- evidenziazione sintassi G-code (stile NCnetic) ---- */
 .t-g  { color: #ffd54a; }           /* G-code moto */

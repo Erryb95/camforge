@@ -5,6 +5,7 @@
 // È la base per il generatore NC: fori con centro/raggio precisi, niente mesh.
 
 import { getOcctFull, readStepShape, explore } from './occt.js';
+import { wiresOfFace } from './wires.js';
 
 const CURVE_STEPS = 40;   // campioni per spigolo curvo
 
@@ -14,6 +15,7 @@ const CURVE_STEPS = 40;   // campioni per spigolo curvo
  *   bbox:{min:{x,y,z},max:{x,y,z}},
  *   cylinders:{r:number, c:{x,y,z}, dir:{x,y,z}}[],
  *   planes:{p:{x,y,z}, n:{x,y,z}}[],
+ *   faceLoops:{n:{x,y,z}, d:number, loops:{x:number,y:number,z:number}[][]}[],
  *   edges:{x:number,y:number,z:number}[][]
  * }>}
  */
@@ -37,6 +39,8 @@ export async function extractBrep(stepText) {
   const cylinders = [];
   /** @type {{p:{x,y,z}, n:{x,y,z}}[]} */
   const planes = [];
+  /** @type {{n:{x,y,z}, d:number, loops:{x:number,y:number,z:number}[][]}[]} */
+  const faceLoops = [];
   for (const f of explore(oc, shape, oc.TopAbs_ShapeEnum.TopAbs_FACE)) {
     const face = oc.TopoDS.Face_1(f);
     const surf = new oc.BRepAdaptor_Surface_2(face, true);
@@ -54,7 +58,22 @@ export async function extractBrep(stepText) {
       const pl = surf.Plane();
       const ax = pl.Axis();
       const loc = ax.Location(), n = ax.Direction();
-      planes.push({ p: { x: loc.X(), y: loc.Y(), z: loc.Z() }, n: { x: n.X(), y: n.Y(), z: n.Z() } });
+      const nrm = { x: n.X(), y: n.Y(), z: n.Z() };
+      planes.push({ p: { x: loc.X(), y: loc.Y(), z: loc.Z() }, n: nrm });
+      // facce RADIALI (normale ⟂ asse tubo X): i wire interni sono i tagli
+      // (fori e ASOLE come contorni veri). d = offset del piano lungo la normale.
+      if (Math.abs(nrm.x) < 0.2) {
+        try {
+          const loops = wiresOfFace(oc, f);
+          if (loops.some((l) => !l.outer)) {
+            faceLoops.push({
+              n: nrm,
+              d: loc.X() * nrm.x + loc.Y() * nrm.y + loc.Z() * nrm.z,
+              loops: loops.filter((l) => !l.outer).map((l) => l.pts),
+            });
+          }
+        } catch { /* faccia senza wire estraibili: ignora */ }
+      }
     }
   }
 
@@ -79,5 +98,5 @@ export async function extractBrep(stepText) {
     if (pts.length >= 2) edges.push(pts);
   }
 
-  return { bbox: { min, max }, cylinders, planes, edges };
+  return { bbox: { min, max }, cylinders, planes, faceLoops, edges };
 }

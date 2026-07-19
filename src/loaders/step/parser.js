@@ -7,6 +7,7 @@
 
 import { newBounds, dist3 } from '../../core/model.js';
 import { sequenceSegments } from '../cad/sequence.js';
+import { applyCadTubeUnroll } from '../cad/tubeDetect.js';
 
 const DIHEDRAL_DEG = 25;           // sopra questo angolo lo spigolo si vede
 const VERT_PRECISION = 1000;       // dedup vertici a 1/1000 mm
@@ -249,6 +250,13 @@ export async function parseStep(content, fileName = '') {
     ? { positions: new Float64Array(meshPos), indices: new Uint32Array(meshIdx), triTool: new Uint32Array(meshTri) }
     : null;
 
+  /** @type {Record<string, any>} */
+  const meta = { dialect: fmt === 'STEP' ? 'STEP' : fmt, solidi: meshes.length };
+  // se il solido è un tubo, calcola lo sviluppo → vista "Svolto" come per gli NC
+  if (applyCadTubeUnroll(segments, meta)) {
+    listing.push(`Tubo rilevato: ${meta.tubeDiameter ? `Ø${meta.tubeDiameter}` : `${meta.tubeWidth}×${meta.tubeHeight}`} L${meta.tubeLength}`);
+  }
+
   return {
     name: fileName,
     program: null,
@@ -257,7 +265,7 @@ export async function parseStep(content, fileName = '') {
     drillPoints: [],
     warnings,
     rawLines: listing.length ? listing : ['(nessun solido)'],
-    meta: { dialect: fmt === 'STEP' ? 'STEP' : fmt, solidi: meshes.length },
+    meta,
     toolNames,
     mesh,
     bounds: all.result(),

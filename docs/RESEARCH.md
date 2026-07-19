@@ -146,6 +146,26 @@ STEP/DXF ─► [opencascade.js] facce/edge B-rep
   grossa e rischiosa; l'euristica PCA attuale copre ~95%. Da valutare quando servirà
   la precisione B-rep esatta.
 
+## 6-ter. Post-processor (ricerca 2026-07-12/13 + integrazione)
+
+**Non esiste** una libreria open-source pronta per l'ordinamento tagli su TUBO:
+in letteratura è un TSP generalizzato (CCP/ECP/GTSP — "A review of cutting path
+algorithms for laser cutters", ResearchGate 309447789; approcci GA/SA/ACO,
+MDPI jmse-11-00652). I tool GitHub trovati (wholder/LaserCut,
+heidelberg-makerspace/lasertools) sono per lamiera piana, non riusabili.
+
+**Integrato invece** (fonte canonica): i **post-processor ufficiali FreeCAD CAM**
+(LGPL-2.1) scaricati in `vendor/reference/freecad-posts/` — `grbl_post.py`,
+`linuxcnc_post.py`, `generic_plasma_post.py` — e adattati in JS:
+- `src/generator/toolpath.js` = motore regole (interni→perimetro per
+  contenimento, NN + rotazione punto di partenza, lead-in lato sfrido);
+- `src/generator/post/gcode.js` = dialetti grbl/linuxcnc con pierce delay
+  del post plasma (~70 ms/mm, min 0.5 s);
+- pipeline dimostrativa `tools/step2nc.mjs` (STEP→NC, anche non-tubo) +
+  `tools/make-demo-plate.mjs` (STEP di prova generato con occt-full writer).
+La sequenza tubo (testa front → feature lungo barra → testa back ultima, G0 di
+approccio tra le op) è nel generatore `tubeNc.js`.
+
 ## 7. Prossimi passi consigliati
 
 1. **Apri un `.cn` e conferma `<LXDDocument>`** → scrivi il parser JS seguendo lo schema LXD.

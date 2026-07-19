@@ -10,7 +10,10 @@ import '../src/loaders/dxf/index.js';
 import '../src/loaders/step/index.js';
 import '../src/loaders/dwg/index.js';
 import '../src/loaders/atd/index.js';
+import '../src/loaders/lra/index.js';
+import '../src/loaders/stl/loader.js';
 import { parseFile, isBinaryExt } from '../src/core/registry.js';
+import { foldToStrip } from '../src/core/unroll.js';
 
 const [, , input, output, view = 'DEV', W = '1200', H = '700'] = process.argv;
 if (!input || !output) {
@@ -25,6 +28,114 @@ const content = isBinaryExt(baseName)
   : await readFile(input, 'utf8');
 const res = parseFile(baseName, content);
 const model = await Promise.resolve(res.model);
+
+// FOLD=<t>: PIEGATURA tubo (file .lra/.ybc) — mesh del tubo alla frazione di piega t (0=dritto,1=finito)
+if (process.env.FOLD != null && process.env.FOLD !== '' && model.meta && model.meta.bend && view === '3D') {
+  const { foldMeshFromCenterline } = await import('../src/sim/tubebend.js');
+  const b = model.meta.bend;
+  model.mesh = foldMeshFromCenterline(b.centerline, b.clr, b.od, Number(process.env.FOLD));
+  console.error(`piega: ${b.nBends} pieghe (${b.format}), OD ${b.od}, CLR ${b.clr}, t=${process.env.FOLD}, ${model.mesh.indices.length / 3} tri`);
+}
+// STOCK=1: simula l'asportazione del materiale (Z-map) e usa lo stock come mesh
+// (CARVE=<mm> per fermarsi a metà; default = programma intero)
+if (process.env.STOCK && view === '3D') {
+  const { MaterialSim } = await import('../src/sim/materialsim.js');
+  const sim = new MaterialSim(model);
+  if (sim.ok) {
+    sim.carveTo(process.env.CARVE ? Number(process.env.CARVE) : null);
+    model.mesh = { positions: sim.mesh().positions, indices: sim.mesh().indices };
+    console.error(`stock: ${sim.hm.nx}x${sim.hm.ny} celle, utensile ${sim.tool.type} Ø${sim.tool.diameter}, volume asportato ${sim.hm.removedVolume().toFixed(0)} mm³`);
+  }
+}
+// LASER=1: taglio LAMIERA — kerf attraverso lo spessore + separazione pezzi (CARVE=mm)
+if (process.env.LASER && view === '3D') {
+  const { LaserSheetSim } = await import('../src/sim/lasercut.js');
+  const sim = new LaserSheetSim(model, { thickness: Number(process.env.THICK) || 3, kerf: Number(process.env.KERF) || 0.4 });
+  if (sim.ok) {
+    await sim.precompute();
+    const carve = process.env.CARVE ? Number(process.env.CARVE) : null;
+    let mesh = sim.meshAt(carve);
+    // HEAD=1: aggiungi la testa laser posizionata al punto di taglio (headless, readFile)
+    if (process.env.HEAD && carve != null) {
+      const { parseSTL, mergeMeshes, meshBounds } = await import('../src/loaders/stl/index.js');
+      const head = parseSTL(new Uint8Array(await readFile('samples/laserhead/LaserHead2.stl')), 3);
+      const holder = parseSTL(new Uint8Array(await readFile('samples/laserhead/LaserHeadHolder2.stl')), 4);
+      const hm = mergeMeshes([head, holder]);
+      const hb = meshBounds(head);
+      const tip = [(hb.min[0] + hb.max[0]) / 2, (hb.min[1] + hb.max[1]) / 2, hb.min[2]];
+      const scale = (0.8 * Math.max(model.bounds.max.x - model.bounds.min.x, model.bounds.max.y - model.bounds.min.y)) / (hb.size[2] || 1);
+      // punto di taglio a `carve`
+      let acc = 0, cut = null;
+      for (const s of model.segments) { const sl = s.len || 0; if (acc + sl >= carve) { const pts = s.pts; let rem = carve - acc, cum = 0; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z); if (cum + d >= rem) { const t = (rem - cum) / (d || 1); cut = { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t }; break; } cum += d; } break; } acc += sl; }
+      if (cut) {
+        const hp = new Float64Array(hm.positions.length);
+        for (let i = 0; i < hm.positions.length; i += 3) { hp[i] = cut.x + (hm.positions[i] - tip[0]) * scale; hp[i + 1] = cut.y + (hm.positions[i + 1] - tip[1]) * scale; hp[i + 2] = sim.thickness + 2 + (hm.positions[i + 2] - tip[2]) * scale; }
+        const merged = mergeMeshes([{ positions: mesh.positions, indices: mesh.indices, triTool: mesh.triTool }, { positions: hp, indices: hm.indices, triTool: hm.triTool }]);
+        mesh = merged;
+      }
+    }
+    model.mesh = mesh;
+    console.error(`laser: ${sim.contours.length} contorni, ${sim.regions.filter((r) => !r.isFrame).length} pezzi, ${model.mesh.indices.length / 3} tri`);
+  }
+}
+// LASERTUBE=1: taglio LASER TUBO (kerf sullo svolto + troncatura=stacco assiale)
+if (process.env.LASERTUBE && view === '3D') {
+  const { LaserTubeSim, outwardNormalAt } = await import('../src/sim/lasertube.js');
+  const sim = new LaserTubeSim(model, { wall: Number(process.env.WALL) || 2 });
+  if (sim.ok) {
+    await sim.precompute();
+    const carve = process.env.CARVE ? Number(process.env.CARVE) : null;
+    let mesh = sim.meshAt(carve);
+    if (process.env.HEAD && carve != null) {
+      const { parseSTL, mergeMeshes, meshBounds } = await import('../src/loaders/stl/index.js');
+      const head = parseSTL(new Uint8Array(await readFile('samples/laserhead/LaserHead2.stl')), 3);
+      const holder = parseSTL(new Uint8Array(await readFile('samples/laserhead/LaserHeadHolder2.stl')), 4);
+      const hm = mergeMeshes([head, holder]); const hb = meshBounds(head);
+      const tip = [(hb.min[0] + hb.max[0]) / 2, (hb.min[1] + hb.max[1]) / 2, hb.min[2]];
+      const p = sim.profile; const sm = p.type === 'round' ? 2 * p.r : Math.max(p.w, p.h);
+      const scale = 1.3 * sm / (hb.size[2] || 1);
+      // punto di taglio a `carve`
+      let acc = 0, cut = null; for (const s of model.segments) { const sl = s.len || 0; if (acc + sl >= carve) { const pts = s.pts; let rem = carve - acc, cum = 0; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z); if (cum + d >= rem) { const t = (rem - cum) / (d || 1); cut = { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t, z: pts[i - 1].z + (pts[i].z - pts[i - 1].z) * t }; break; } cum += d; } break; } acc += sl; }
+      if (cut) {
+        const n = outwardNormalAt(cut.y, cut.z, p);
+        const nd = [0, -n[0], -n[1]]; const up = [0, n[0], n[1]];   // Z-locale verso esterno
+        const ref = [1, 0, 0]; let ex = [ref[1] * up[2] - ref[2] * up[1], ref[2] * up[0] - ref[0] * up[2], ref[0] * up[1] - ref[1] * up[0]]; const exl = Math.hypot(...ex) || 1; ex = ex.map((v) => v / exl);
+        const ey = [up[1] * ex[2] - up[2] * ex[1], up[2] * ex[0] - up[0] * ex[2], up[0] * ex[1] - up[1] * ex[0]];
+        const tp = [cut.x, cut.y + n[0] * 3, cut.z + n[1] * 3];
+        const hp = new Float64Array(hm.positions.length);
+        for (let i = 0; i < hm.positions.length; i += 3) { const lx = (hm.positions[i] - tip[0]) * scale, ly = (hm.positions[i + 1] - tip[1]) * scale, lz = (hm.positions[i + 2] - tip[2]) * scale; hp[i] = tp[0] + ex[0] * lx + ey[0] * ly + up[0] * lz; hp[i + 1] = tp[1] + ex[1] * lx + ey[1] * ly + up[1] * lz; hp[i + 2] = tp[2] + ex[2] * lx + ey[2] * ly + up[2] * lz; }
+        mesh = mergeMeshes([mesh, { positions: hp, indices: hm.indices, triTool: hm.triTool }]);
+      }
+    }
+    model.mesh = mesh;
+    console.error(`laser-tubo: ${sim.contours.length} contorni, ${sim.axials.length} assiali, ${sim.slugs.length} slug, ${model.mesh.indices.length / 3} tri`);
+  }
+}
+// TRIDEXEL=1: come STOCK ma col motore tri-dexel (4/5 assi, undercut/pareti nette)
+if (process.env.TRIDEXEL && view === '3D') {
+  const { MaterialSim5 } = await import('../src/sim/materialsim5.js');
+  const sim = new MaterialSim5(model, { cellsTarget: Number(process.env.CELLS) || 90, fiveAxis: !!process.env.FIVEAXIS });
+  if (sim.ok) {
+    const carve = process.env.CARVE ? Number(process.env.CARVE) : null;
+    sim.carveTo(carve);
+    const m = sim.mesh();
+    let mesh = { positions: m.positions, indices: m.indices };
+    if (process.env.HEAD && carve != null) {   // punta fresa al punto utensile
+      const { parseSTL, meshBounds, mergeMeshes } = await import('../src/loaders/stl/index.js');
+      const g = parseSTL(new Uint8Array(await readFile('samples/millhead/bit.stl')), 5);
+      const b = meshBounds(g); const tip = [(b.min[0] + b.max[0]) / 2, b.min[1], (b.min[2] + b.max[2]) / 2];
+      const dia = Math.min(b.size[0], b.size[2]); const scale = (sim.tool.r * 2) / (dia || 1);
+      let acc = 0, cut = null; for (const s of model.segments) { const sl = s.len || 0; if (acc + sl >= carve) { const pts = s.pts; let rem = carve - acc, cum = 0; for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z); if (cum + d >= rem) { const t = (rem - cum) / (d || 1); cut = { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t, z: pts[i - 1].z + (pts[i].z - pts[i - 1].z) * t }; break; } cum += d; } break; } acc += sl; }
+      if (cut) {
+        const rt = [tip[0], -tip[2], tip[1]]; const hp = new Float64Array(g.positions.length);
+        for (let i = 0; i < g.positions.length; i += 3) { hp[i] = cut.x + (g.positions[i] - rt[0]) * scale; hp[i + 1] = cut.y + (-g.positions[i + 2] - rt[1]) * scale; hp[i + 2] = cut.z + (g.positions[i + 1] - rt[2]) * scale; }
+        mesh = mergeMeshes([{ ...mesh, triTool: new Uint32Array(mesh.indices.length / 3) }, { positions: hp, indices: g.indices, triTool: g.triTool }]);
+      }
+    }
+    model.mesh = mesh;
+    console.error(`tri-dexel: carve=${carve == null ? 'tutto' : carve}, volume solido ${sim.td.solidVolume().toFixed(0)} mm³, ${model.mesh.indices.length / 3} tri`);
+  }
+}
 
 // --- proiezione ---
 // orbita 3D fissa (stessa formula del viewer): az/el via env AZ/EL (gradi)
@@ -42,17 +153,35 @@ const PLANES = {
 };
 /** @type {{type:string, pts:number[][]}[]} */
 const polys = [];
+const per = model.meta && model.meta.perimeter;
 for (const seg of model.segments) {
   let pts;
+  let breaks = null;
   if (view === 'DEV') {
     if (!seg.uv) continue;
-    pts = seg.uv.map((q) => [q.u, q.v]);
+    // ripiega su UNA sezione [-per/2, per/2) e segna dove attraversa la cucitura
+    let prevV = 0;
+    pts = seg.uv.map((q, i) => {
+      const v = per ? foldToStrip(q.v, per) : q.v;
+      if (per && i > 0 && Math.abs(v - prevV) > per / 2) (breaks ||= new Set()).add(i);
+      prevV = v;
+      return [q.u, v];
+    });
   } else if (view === '3D') {
     pts = (seg.tubePts || seg.pts).map(p3d);   // tubi: contorni avvolti sul solido
   } else {
     pts = seg.pts.map(PLANES[view]);
   }
-  polys.push({ type: seg.type, pts });
+  polys.push({ type: seg.type, pts, breaks });
+}
+// modello SOLO-MESH (STL/STEP senza percorso): fit dalle 8 corner del bbox mesh
+if (!polys.length && view === '3D' && model.mesh && model.mesh.positions.length) {
+  const P = model.mesh.positions;
+  const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < P.length; i += 3) for (let k = 0; k < 3; k++) { if (P[i + k] < bb[k]) bb[k] = P[i + k]; if (P[i + k] > bb[k + 3]) bb[k + 3] = P[i + k]; }
+  const corners = [];
+  for (const x of [bb[0], bb[3]]) for (const y of [bb[1], bb[4]]) for (const z of [bb[2], bb[5]]) corners.push(p3d({ x, y, z }));
+  polys.push({ type: 'feed', pts: corners, breaks: null });
 }
 if (!polys.length) {
   console.error(`nessun segmento proiettabile in vista ${view}`);
@@ -64,6 +193,10 @@ let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
 for (const p of polys) for (const [u, v] of p.pts) {
   if (u < minU) minU = u; if (u > maxU) maxU = u;
   if (v < minV) minV = v; if (v > maxV) maxV = v;
+}
+// includi i bordi facce nella scala verticale: la vista mostra sempre la sezione intera
+if (view === 'DEV' && model.meta && model.meta.unrollGuides) {
+  for (const g of model.meta.unrollGuides) { if (g < minV) minV = g; if (g > maxV) maxV = g; }
 }
 const scale = Math.min((w * 0.92) / Math.max(maxU - minU, 1e-6), (h * 0.92) / Math.max(maxV - minV, 1e-6));
 const cu = (minU + maxU) / 2, cv = (minV + maxV) / 2;
@@ -150,10 +283,26 @@ if (view !== '3D' || !process.env.SOLID) {
   line(0, sy(0), w - 1, sy(0), 0x26, 0x2e, 0x3b);
 }
 
-for (const p of polys) {
+// in simulazione asportazione (stock/tri-dexel/laser) il pezzo È il solido scavato:
+// mostrare tutto il percorso lo farebbe sembrare già finito → disegno solo la SCIA
+// già percorsa (fino a CARVE), niente rapidi, tinta tenue. (allineato al viewer)
+const stockSim = view === '3D' && !!process.env.SOLID &&
+  !!(process.env.STOCK || process.env.TRIDEXEL || process.env.LASER || process.env.LASERTUBE);
+const carveEnv = process.env.CARVE != null && process.env.CARVE !== '' ? Number(process.env.CARVE) : null;
+let cumEnd = null;
+if (stockSim) { cumEnd = []; let acc = 0; for (const seg of model.segments) { acc += seg.len || 0; cumEnd.push(acc); } }
+
+for (let pi = 0; pi < polys.length; pi++) {
+  const p = polys[pi];
   const rapid = p.type === 'rapid';
-  const [r, g, b] = rapid ? [0x8a, 0x55, 0x60] : [0x4c, 0xc9, 0xf0];
+  if (stockSim) {
+    if (rapid) continue;                                       // niente rapidi sul solido
+    const start = (cumEnd[pi] || 0) - (model.segments[pi] ? model.segments[pi].len || 0 : 0);
+    if (carveEnv != null && start >= carveEnv) continue;       // percorso ancora da tagliare
+  }
+  const [r, g, b] = stockSim ? [0x2a, 0x6b, 0x82] : (rapid ? [0x8a, 0x55, 0x60] : [0x4c, 0xc9, 0xf0]);
   for (let i = 1; i < p.pts.length; i++) {
+    if (p.breaks && p.breaks.has(i)) continue;   // salta la cucitura
     line(sx(p.pts[i - 1][0]), sy(p.pts[i - 1][1]), sx(p.pts[i][0]), sy(p.pts[i][1]), r, g, b, rapid);
   }
 }

@@ -23,6 +23,16 @@ export function profileFromMeta(meta) {
 }
 
 /**
+ * Ripiega un'ascissa perimetrale nell'UNICA fascia [-per/2, per/2): usato dalle
+ * viste svolte per allineare tutto a una sola sezione del tubo (i giri completi
+ * — es. troncatura — riappaiono nella stessa striscia invece di scorrere via).
+ * @param {number} v @param {number} per
+ */
+export function foldToStrip(v, per) {
+  return ((v % per) + per + per / 2) % per - per / 2;
+}
+
+/**
  * Ascissa perimetrale in [-per/2, per/2) del punto di sezione (yt, zt) nel
  * sistema tubo. v=0 al centro della faccia superiore, cresce verso +yt.
  * I punti fuori dal bordo (testa sollevata) o interni (raccordi spigoli)
@@ -54,7 +64,7 @@ export function perimeterParam(yt, zt, profile) {
     else s = 3 * a + 2 * b + (z + b);                // fianco sinistro
   }
   // centra in [-per/2, per/2)
-  return ((s % per) + per + per / 2) % per - per / 2;
+  return foldToStrip(s, per);
 }
 
 /**

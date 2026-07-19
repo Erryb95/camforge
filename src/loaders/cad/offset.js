@@ -59,3 +59,51 @@ export async function pathArea(path) {
   const p = path.map(([x, y]) => new lib.IntPoint(Math.round(x * SCALE), Math.round(y * SCALE)));
   return lib.Clipper.Area(p) / (SCALE * SCALE);
 }
+
+/**
+ * Offsetta polilinee APERTE di `halfKerf` mm per lato (kerf laser = banda attorno
+ * al percorso). Estremi squadrati (etOpenButt) di default. @returns {Promise<number[][][]>}
+ * @param {number[][][]} polylines  [[[x,y],...], ...] (mm)
+ * @param {number} halfKerf         mm per lato (delta = kerf/2)
+ * @param {{cap?:'butt'|'round'|'square', join?:'round'|'miter'|'square', arcTol?:number}} [opts]
+ */
+export async function offsetOpen(polylines, halfKerf, opts = {}) {
+  const lib = await getClipper();
+  const co = new lib.ClipperOffset(2, (opts.arcTol ?? 0.02) * SCALE);
+  const cap = opts.cap === 'round' ? lib.EndType.etOpenRound : opts.cap === 'square' ? lib.EndType.etOpenSquare : lib.EndType.etOpenButt;
+  const join = opts.join === 'miter' ? lib.JoinType.jtMiter : opts.join === 'square' ? lib.JoinType.jtSquare : lib.JoinType.jtRound;
+  for (const pl of polylines) {
+    if (pl.length < 2) continue;
+    co.AddPath(pl.map(([x, y]) => new lib.IntPoint(Math.round(x * SCALE), Math.round(y * SCALE))), join, cap);
+  }
+  /** @type {any[]} */ const sol = [];
+  co.Execute(sol, halfKerf * SCALE);
+  return sol.map((p) => p.map((pt) => [pt.X / SCALE, pt.Y / SCALE]));
+}
+
+/**
+ * Materiale residuo dopo il taglio: `blank` meno l'unione degli `swaths` (kerf).
+ * Restituisce regioni con fori (dal PolyTree: outer non-hole + suoi fori; le isole
+ * dentro i fori diventano nuove regioni). @returns {Promise<{outer:number[][], holes:number[][][]}[]>}
+ * @param {number[][][]} blank   contorni pieni (subject)
+ * @param {number[][][]} swaths  bande di kerf da sottrarre (clip)
+ */
+export async function cutRegions(blank, swaths) {
+  const lib = await getClipper();
+  const toInt = (path) => path.map(([x, y]) => new lib.IntPoint(Math.round(x * SCALE), Math.round(y * SCALE)));
+  const back = (path) => path.map((pt) => [pt.X / SCALE, pt.Y / SCALE]);
+  const c = new lib.Clipper();
+  c.AddPaths(blank.map(toInt), lib.PolyType.ptSubject, true);
+  if (swaths.length) c.AddPaths(swaths.map(toInt), lib.PolyType.ptClip, true);
+  const tree = new lib.PolyTree();
+  c.Execute(lib.ClipType.ctDifference, tree, lib.PolyFillType.pftNonZero, lib.PolyFillType.pftNonZero);
+  /** @type {{outer:number[][], holes:number[][][]}[]} */
+  const regions = [];
+  const walk = (node) => {
+    const childs = node.Childs();
+    regions.push({ outer: back(node.Contour()), holes: childs.map((h) => back(h.Contour())) });
+    for (const h of childs) for (const island of h.Childs()) walk(island);   // isole nei fori
+  };
+  for (const top of tree.Childs()) walk(top);
+  return regions;
+}

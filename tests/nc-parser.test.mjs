@@ -124,11 +124,25 @@ test('commenti, %, O e N non disturbano', () => {
 });
 
 test('avvisi: macro, coordinate senza moto, G sconosciuto', () => {
-  const m = parseNC('#100=5\nX10 Y10\nG76 X5\nG90 G1 X1 F10\n');
+  const m = parseNC('O101 WHILE [#200 GT 3]\nX10 Y10\nG76 X5\nG90 G1 X1 F10\n');
   assert.ok(m.warnings.some((w) => w.msg.includes('macro')));
   assert.ok(m.warnings.some((w) => w.msg.includes('senza modo di moto')));
   assert.ok(m.warnings.some((w) => w.msg.includes('G76')));
   assert.equal(m.segments.length, 1); // solo il G1 valido
+});
+
+test('parametri LinuxCNC: #<nome>/#123 e espressioni [..] valutate (stile 3D_Chips)', () => {
+  const m = parseNC('#<xscale> = 2.0\n#100 = 5\nG21 G90\nG0 X[#<xscale>*10.] Y#100\nG1 X[#<xscale>*20.] Y[#100+SIN[30]*2] F[100*3]\n');
+  assert.equal(m.warnings.length, 0, JSON.stringify(m.warnings));
+  assert.equal(m.segments.length, 2);
+  const g1 = m.segments[1];
+  assert.ok(Math.abs(g1.to.x - 40) < 1e-9);          // 2*20
+  assert.ok(Math.abs(g1.to.y - 6) < 1e-9);           // 5 + sin(30°)*2 = 6
+  assert.ok(Math.abs(g1.feed - 300) < 1e-9);
+  // parametro sconosciuto → la riga resta macro (ignorata con avviso)
+  const m2 = parseNC('G90 G1 X[#<boh>*2] F10\n');
+  assert.ok(m2.warnings.some((w) => w.msg.includes('macro')));
+  assert.equal(m2.segments.length, 0);
 });
 
 test('dopo M30 non si traccia più nulla', () => {

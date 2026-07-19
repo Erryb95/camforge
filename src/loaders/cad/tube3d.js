@@ -24,15 +24,49 @@ export function buildTubeMesh(profile, xMin, xMax, wall = 0) {
   const shells = [outer];
   if (wall > 0) shells.push(sectionOutline(profile, -wall));   // parete interna
 
+  // SUDDIVISIONE lungo l'asse: il renderer ordina i triangoli per baricentro
+  // (painter's algorithm) — con 2 soli triangoli per faccia l'ordinamento
+  // sbaglia a metà tubo e il solido appare "attorcigliato". Anelli con passo
+  // ~sezione ⇒ triangoli piccoli ⇒ occlusione corretta.
+  const span = Math.max(1e-6, xMax - xMin);
+  const sectMin = profile.type === 'round' ? 2 * profile.r : Math.min(profile.w, profile.h);
+  const uStep = Math.min(60, Math.max(10, sectMin));
+  const nRings = Math.max(1, Math.min(300, Math.ceil(span / uStep)));
+
   for (const sect of shells) {
     const N = sect.length;
     const base = positions.length / 3;
-    for (const x of [xMin, xMax]) for (const [y, z] of sect) positions.push(x, y, z);
-    for (let i = 0; i < N; i++) {
-      const j = (i + 1) % N;
-      const A = base + i, B = base + j, C = base + N + i, D = base + N + j;
-      indices.push(A, C, B, B, C, D);
-      triTool.push(TUBE_TOOL, TUBE_TOOL);
+    for (let k = 0; k <= nRings; k++) {
+      const x = xMin + (span * k) / nRings;
+      for (const [y, z] of sect) positions.push(x, y, z);
+    }
+    for (let k = 0; k < nRings; k++) {
+      for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N;
+        const A = base + k * N + i, B = base + k * N + j;
+        const C = base + (k + 1) * N + i, D = base + (k + 1) * N + j;
+        indices.push(A, C, B, B, C, D);
+        triTool.push(TUBE_TOOL, TUBE_TOOL);
+      }
+    }
+  }
+
+  // tappi alle estremità (anello outer→inner) quando c'è la parete: chiudono
+  // la vista "dentro" il tubo alle due teste
+  if (wall > 0) {
+    const N0 = outer.length, N1 = shells[1].length;
+    if (N0 === N1) {
+      const outBase = 0;
+      const inBase = (nRings + 1) * N0;
+      for (const end of [0, nRings]) {
+        for (let i = 0; i < N0; i++) {
+          const j = (i + 1) % N0;
+          const A = outBase + end * N0 + i, B = outBase + end * N0 + j;
+          const C = inBase + end * N1 + i, D = inBase + end * N1 + j;
+          indices.push(A, C, B, B, C, D);
+          triTool.push(TUBE_TOOL, TUBE_TOOL);
+        }
+      }
     }
   }
 

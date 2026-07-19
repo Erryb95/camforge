@@ -59,6 +59,9 @@ function emitOp(out, n, label, xCut, points, feedVar = 'feed1') {
   out.push('G1000 G0 X(kine_x) Y(kine_y) B(kine_b) C(kine_c) U(0)');
   out.push(`G2310 X${f3(xCut)}`);
   out.push(`G2312 X${f3(xCut)}`);
+  // approccio in RAPIDO al punto d'attacco (la passata di taglio parte da qui:
+  // nessun moto di taglio tra un contorno e il successivo)
+  out.push(`G0 X${f3(p0.x)} Y${f3(p0.y)} Z${f3(p0.z)} C${f3(p0.c)}`);
   out.push(`G800 D1 G10 X${f3(xCut)} Y${f3(p0.y)} Z${f3(p0.z)} H0 C${f3(p0.c)} U0 V0 W1 F(${feedVar}) T1 P1 R1`);
   out.push('G832');
   out.push(';M821');
@@ -71,11 +74,31 @@ function emitOp(out, n, label, xCut, points, feedVar = 'feed1') {
   out.push('G840');
 }
 
+/** Ruota un contorno chiuso perché parta dal punto più vicino a `prev` (meno rapido). */
+function rotateClosed(pts, prev) {
+  if (!prev || pts.length < 3) return pts;
+  const core = pts.slice(0, -1);   // ultimo = primo
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < core.length; i++) {
+    const d = Math.hypot(core[i].x - prev.x, core[i].y - prev.y, core[i].z - prev.z);
+    if (d < bd) { bd = d; best = i; }
+  }
+  const rot = core.slice(best).concat(core.slice(0, best));
+  rot.push({ ...rot[0] });
+  return rot;
+}
+
 /**
  * Genera il programma NC tubo dalle feature.
+ * Sequenza (regola CAM tubo, cfr. i .cn reali): taglio di testa ANTERIORE per
+ * primo, poi le feature interne in ordine lungo la barra, e il taglio di testa
+ * POSTERIORE per ULTIMO (il pezzo resta attaccato alla barra fino alla fine).
+ * Ogni contorno è UNA passata continua, con punto d'attacco ruotato verso la
+ * posizione precedente per minimizzare il rapido.
  * @param {{
  *   sectionW:number, sectionH:number, cornerR:number, length:number,
- *   holes:{xStep:number, yStep:number, r:number, faceZ:number}[]
+ *   holes:{xStep:number, yStep:number, r:number, faceZ:number}[],
+ *   slots?:{pts:{x:number,y:number,z:number}[], n:{x:number,y:number,z:number}}[]
  * }} feat
  * @param {{trim?:number, barLength?:number, arcSteps?:number}} [setup]
  */
@@ -94,26 +117,49 @@ export function generateTubeNc(feat, setup = {}) {
   let n = 1;
   const outline = sectionPath(W, H, R, setup.arcSteps ?? 6);
 
-  // N1: taglio di testa anteriore (perimetro sezione a X = -trim)
+  // N1: taglio di testa ANTERIORE (perimetro sezione a X = -trim) — PRIMO
   const front = outline.map((p) => ({
     x: xOf(0), y: p.y, z: p.z,
     c: norm360(Math.atan2(p.ny, p.nz) * 180 / Math.PI), ej: p.ny, ek: p.nz,
   }));
   emitOp(out, n++, 'W_T_Master_J2_B2', xOf(0), front);
+  let prev = front[front.length - 1];
 
-  // fori (cerchi sulla faccia superiore, C=0)
-  for (const h of feat.holes) {
-    const cx = xOf(h.xStep), cy = h.yStep, z = H / 2;
-    const N = 48;
-    const pts = [];
-    for (let i = 0; i <= N; i++) {
-      const t = (2 * Math.PI * i) / N;
-      pts.push({ x: cx + h.r * Math.cos(t), y: cy + h.r * Math.sin(t), z, c: 0, ej: 0, ek: 1 });
+  // feature interne (fori + asole) in ordine lungo la barra dal fronte
+  const feats = [];
+  for (const h of feat.holes) feats.push({ x: h.xStep, hole: h });
+  for (const s of feat.slots || []) {
+    const xm = s.pts.reduce((a, p) => a + p.x, 0) / s.pts.length;
+    feats.push({ x: xm, slot: s });
+  }
+  feats.sort((a, b) => a.x - b.x);
+
+  for (const ft of feats) {
+    if (ft.hole) {
+      const h = ft.hole;
+      const cx = xOf(h.xStep), cy = h.yStep, z = (H / 2) * h.faceZ;
+      const ek = h.faceZ >= 0 ? 1 : -1;
+      const c = norm360(Math.atan2(0, ek) * 180 / Math.PI);
+      const N = 48;
+      let pts = [];
+      for (let i = 0; i <= N; i++) {
+        const t = (2 * Math.PI * i) / N;
+        pts.push({ x: cx + h.r * Math.cos(t), y: cy + h.r * Math.sin(t), z, c, ej: 0, ek });
+      }
+      pts = rotateClosed(pts, prev);
+      emitOp(out, n++, 'W_T_Hole_B2', cx, pts);
+      prev = pts[pts.length - 1];
+    } else {
+      const s = ft.slot;
+      const c = norm360(Math.atan2(s.n.y, s.n.z) * 180 / Math.PI);
+      let pts = s.pts.map((p) => ({ x: xOf(p.x), y: p.y, z: p.z, c, ej: s.n.y, ek: s.n.z }));
+      pts = rotateClosed(pts, prev);
+      emitOp(out, n++, 'W_T_Slot_B2', xOf(ft.x), pts);
+      prev = pts[pts.length - 1];
     }
-    emitOp(out, n++, 'W_T_Hole_B2', cx, pts);
   }
 
-  // N ultimo: taglio di testa posteriore (perimetro sezione a X = -(length+trim))
+  // N ultimo: taglio di testa POSTERIORE — ULTIMO (stacca il pezzo)
   const back = outline.map((p) => ({
     x: xOf(feat.length), y: p.y, z: p.z,
     c: norm360(Math.atan2(p.ny, p.nz) * 180 / Math.PI), ej: p.ny, ek: p.nz,

@@ -25,7 +25,33 @@
   </div>
   <button id="btnSolid" class="toggle active" hidden
           title="Alterna solido ombreggiato / filiforme (vista 3D)">&#9632; Solido</button>
+  <button id="btnStock" class="toggle" hidden
+          title="Modulo FRESATURA: asportazione materiale (tri-dexel) con la punta che segue l'utensile — usa &#9654; o lo slider">&#9935; Fresatura</button>
+  <label id="millResWrap" class="chk" hidden title="Risoluzione griglia tri-dexel: più alta = più dettaglio ma più lenta">
+    &#9638; <input type="range" id="millRes" min="40" max="180" step="10" value="90" style="width:76px;vertical-align:middle">
+    <span id="millResVal" style="font-variant-numeric:tabular-nums"></span></label>
+  <select id="bitMode" class="chk" hidden title="Dove mostrare la punta di fresatura">
+    <option value="follow">Punta: avanzamento</option>
+    <option value="segment">Punta: segmento sel.</option></select>
+  <select id="millAxes" class="chk" hidden title="3 assi = utensile sempre verticale · 4-5 assi = usa l'orientamento utensile (B/C o EI/EJ/EK) dal G-code">
+    <option value="3">3 assi</option>
+    <option value="5">4-5 assi</option></select>
+  <select id="millMaterial" class="chk" hidden title="Materiale del pezzo: cambia la punta consigliata (taglienti/rivestimento) e i parametri di taglio"></select>
+  <label id="millAllowWrap" class="chk" hidden title="Sovrametallo del solido di partenza (mm)">Sovram.
+    <input type="number" id="millAllow" min="0" max="20" step="0.5" value="2" style="width:50px"></label>
+  <button id="btnLaser" class="toggle" hidden
+          title="Simula il TAGLIO (laser/plasma/waterjet/ossitaglio): kerf attraverso lo spessore, pezzi che si staccano, testa che segue &mdash; usa &#9654; o lo slider">&#9986; Taglio</button>
+  <select id="procSelect" hidden title="Processo di taglio: cambia larghezza del kerf ed effetto (laser/plasma/waterjet/ossitaglio)"></select>
+  <button id="btnFold" class="toggle" hidden
+          title="PIEGATURA tubo: ricostruisce il pezzo piegato dal programma LRA/YBC e anima la piega (barra dritta &rarr; finito) &mdash; usa &#9654; o lo slider">&#8635; Piega</button>
+  <button id="btnHands" class="toggle" hidden
+          title="Controlla la vista 3D con le MANI via webcam (solo app desktop): mano aperta &rarr; orbita, pinch pollice+indice &rarr; zoom">&#9995; Mani</button>
   <button id="btnFit" title="Adatta alla vista (F)">&#10530; Adatta</button>
+  <button id="btnGenNc" hidden
+          title="Genera il programma NC da questo STEP (tubo &rarr; dialetto Cutlite, piastra &rarr; GRBL) e caricalo nel viewer">&#9881; &rarr; NC</button>
+  <button id="btnDlNc" hidden title="Scarica l'ultimo NC generato">&#11015; NC</button>
+  <button id="btnMillPart" hidden
+          title="Genera la FRESATURA di questo pezzo 3D: orienta il pezzo, calcola il solido minimo e crea il percorso raster 3 assi &mdash; poi &#9935; Fresatura per simulare">&#9935; &rarr; Fresa</button>
   <label class="chk" title="Mostra/nascondi movimenti rapidi G0">
     <input type="checkbox" id="chkRapids" checked> Rapidi</label>
   <label class="chk" title="Mostra/nascondi punti di foratura (cicli G81-G83)">

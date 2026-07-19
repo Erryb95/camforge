@@ -86,6 +86,137 @@ function tokenize(line) {
   return { words, params, junk: junk.trim() };
 }
 
+// Asse UTENSILE (per fresatura 4/5 assi) dal VETTORE normale a 2 lettere (params):
+// EI/EJ/EK (dialetto tubo), TX/TY/TZ (Heidenhain LN), NI/NJ/NK — oppure dagli assi
+// ROTATIVI A(X)/B(Y)/C(Z) (words). Ritorna [x,y,z] unitario o null (→ +Z, 3 assi).
+const TOOL_VEC_TRIPLES = [['EI', 'EJ', 'EK'], ['TX', 'TY', 'TZ'], ['NI', 'NJ', 'NK']];
+// helper rotazioni 3x3 (row-major)
+const _I3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+const _rx = (a) => { const c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, c, -s, 0, s, c]; };
+const _ry = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, 0, s, 0, 1, 0, -s, 0, c]; };
+const _rz = (a) => { const c = Math.cos(a), s = Math.sin(a); return [c, -s, 0, s, c, 0, 0, 0, 1]; };
+const _mm = (A, B) => { const C = new Array(9); for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) C[r * 3 + c] = A[r * 3] * B[c] + A[r * 3 + 1] * B[3 + c] + A[r * 3 + 2] * B[6 + c]; return C; };
+const _tr = (M) => [M[0], M[3], M[6], M[1], M[4], M[7], M[2], M[5], M[8]];
+// rotazione minima +Z→u (Rodrigues), per il caso VETTORE (nessun roll noto)
+function _zToU(u) {
+  const ux = u[0], uy = u[1], uz = u[2];
+  if (uz > 0.999999) return _I3.slice();
+  if (uz < -0.999999) return [1, 0, 0, 0, -1, 0, 0, 0, -1];
+  const k = 1 / (1 + uz);
+  return [uz + uy * uy * k, -ux * uy * k, ux, -ux * uy * k, uz + ux * ux * k, uy, -ux, -uy, uz];
+}
+
+// Ritorna { axis:[x,y,z] unitario (asse utensile nel frame PEZZO), rot: Q 3x3 } dove
+// Q è la rotazione TAVOLA (pezzo→macchina) con Q·axis = +Z: serve alla vista realistica
+// a tavola basculante (il pezzo si inclina, il mandrino resta verticale). null → 3 assi.
+function toolAxisFrom(w, params) {
+  for (const [ci, cj, ck] of TOOL_VEC_TRIPLES) {
+    const vi = params[ci], vj = params[cj], vk = params[ck];
+    if (vi !== undefined || vj !== undefined || vk !== undefined) {
+      const v = [vi || 0, vj || 0, vk || 0], n = Math.hypot(v[0], v[1], v[2]);
+      if (n > 1e-6) { const u = [v[0] / n, v[1] / n, v[2] / n]; return { axis: u, rot: _tr(_zToU(u)) }; }
+    }
+  }
+  const { A, B, C } = w;
+  if (A !== undefined || B !== undefined || C !== undefined) {
+    const d = Math.PI / 180;
+    let Rp = _I3.slice();                         // Rp: applica A, poi B, poi C a +Z
+    if (A !== undefined) Rp = _mm(_rx(A * d), Rp);
+    if (B !== undefined) Rp = _mm(_ry(B * d), Rp);
+    if (C !== undefined) Rp = _mm(_rz(C * d), Rp);
+    const u = [Rp[2], Rp[5], Rp[8]];              // Rp·(0,0,1) = 3ª colonna
+    const n = Math.hypot(u[0], u[1], u[2]);
+    if (n <= 1e-6) return null;
+    return { axis: [u[0] / n, u[1] / n, u[2] / n], rot: _tr(Rp) };   // Q = Rpᵀ
+  }
+  return null;
+}
+
+// ---------- parametri ed espressioni LinuxCNC (#<nome>, #123, [espr]) ----------
+// Molti file reali (es. i sample LinuxCNC come 3D_Chips.ngc) scrivono TUTTE le
+// coordinate come espressioni: X[#<xscale>*53.] — senza valutarle il file è
+// vuoto. Qui: assegnazioni una-per-riga e riduzione delle [..] più interne.
+
+const LCNC_FN = {
+  SIN: (d) => Math.sin(d * Math.PI / 180), COS: (d) => Math.cos(d * Math.PI / 180),
+  TAN: (d) => Math.tan(d * Math.PI / 180), ASIN: (v) => Math.asin(v) * 180 / Math.PI,
+  ACOS: (v) => Math.acos(v) * 180 / Math.PI, ATAN: (v) => Math.atan(v) * 180 / Math.PI,
+  ABS: Math.abs, SQRT: Math.sqrt, ROUND: Math.round, FIX: Math.floor, FUP: Math.ceil,
+  EXP: Math.exp, LN: Math.log,
+};
+
+/** Aritmetica su espressione SENZA parentesi quadre: + - * / MOD ** e unario. */
+function lcncArith(expr) {
+  const toks = expr.match(/\d+\.?\d*|\.\d+|\*\*|MOD|[+\-*/]/gi);
+  if (!toks || toks.join('').replace(/\s+/g, '') !== expr.replace(/\s+/g, '')) return null;
+  let i = 0;
+  const peek = () => toks[i];
+  const primary = () => {
+    let sign = 1;
+    while (peek() === '+' || peek() === '-') { if (toks[i++] === '-') sign = -sign; }
+    const t = toks[i++];
+    if (t === undefined || !/^[\d.]/.test(t)) return NaN;
+    return sign * parseFloat(t);
+  };
+  const power = () => {
+    const b = primary();
+    if (peek() === '**') { i++; return Math.pow(b, power()); }
+    return b;
+  };
+  const term = () => {
+    let v = power();
+    while (peek() === '*' || peek() === '/' || (peek() || '').toUpperCase() === 'MOD') {
+      const op = toks[i++].toUpperCase();
+      const r = power();
+      v = op === '*' ? v * r : op === '/' ? v / r : ((v % r) + r) % r;
+    }
+    return v;
+  };
+  const sum = () => {
+    let v = term();
+    while (peek() === '+' || peek() === '-') { const op = toks[i++]; const r = term(); v = op === '+' ? v + r : v - r; }
+    return v;
+  };
+  const v = sum();
+  return i === toks.length && isFinite(v) ? v : null;
+}
+
+const lcncNum = (v) => {
+  const s = (+v.toFixed(6)).toString();
+  return s.includes('e') ? v.toFixed(6) : s;
+};
+
+/**
+ * Sostituisce i parametri noti e riduce le [espr] più interne (con eventuale
+ * funzione SIN/COS/… davanti). Ritorna la riga risolta o null se non riducibile.
+ * @param {string} line @param {Map<string, number>} params
+ */
+function lcncReduce(line, params) {
+  // parametri: #<nome> e #123
+  let out = line.replace(/#\s*<([^>]+)>|#(\d+)/g, (m, name, num) => {
+    const key = name !== undefined ? name.trim().toLowerCase() : num;
+    const v = params.get(key);
+    return v === undefined ? m : lcncNum(v);
+  });
+  if (out.includes('#')) return null;   // parametro sconosciuto
+  // riduci le quadre più interne, ripetutamente
+  for (let guard = 0; guard < 60 && out.includes('['); guard++) {
+    let changed = false;
+    out = out.replace(/([A-Za-z]{2,})?\s*\[([^\[\]]*)\]/g, (m, fn, inner) => {
+      const v = lcncArith(inner.trim());
+      if (v === null) return m;
+      changed = true;
+      if (fn) {
+        const f = LCNC_FN[fn.toUpperCase()];
+        return f ? lcncNum(f(v)) : fn + lcncNum(v);   // fn ignota = parola G-code (es. X[..])
+      }
+      return lcncNum(v);
+    });
+    if (!changed) break;
+  }
+  return out.includes('[') || out.includes(']') ? null : out;
+}
+
 /**
  * @param {string} text
  * @param {string} [fileName]
@@ -109,6 +240,8 @@ export function parseNC(text, fileName = '') {
   const st = {
     pos: { x: 0, y: 0, z: 0 },
     axisSet: { x: false, y: false, z: false },
+    toolAxis: /** @type {number[]|null} */ (null),   // asse utensile 4/5 assi (null = +Z, 3 assi)
+    tableRot: /** @type {number[]|null} */ (null),   // rotazione tavola Q (pezzo→macchina) per la vista a tavola basculante
     motion: /** @type {number|null} */ (null),  // 0,1,2,3
     plane: 'XY',
     inch: false,
@@ -121,6 +254,7 @@ export function parseNC(text, fileName = '') {
     ended: false,
     rot: /** @type {number|null} */ (null),   // rotazione tubo P (gradi, modale)
     aux: /** @type {number|null} */ (null),   // carro tubo X_1 (mm, modale)
+    block: 0,                                  // blocco operazione N (dialetto tubo)
   };
 
   const warn = (line, msg, once = false) => {
@@ -130,6 +264,8 @@ export function parseNC(text, fileName = '') {
     }
     if (warnings.length < 500) warnings.push({ line, msg });
   };
+  /** parametri LinuxCNC #<nome>/#123 (per file tipo 3D_Chips.ngc) */
+  const lcncParams = new Map();
   const mm = (v) => (st.inch ? v * 25.4 : v);
   const useTool = () => {
     if (st.tool && !toolsSeen.includes(st.tool)) toolsSeen.push(st.tool);
@@ -153,6 +289,31 @@ export function parseNC(text, fileName = '') {
     line = line.trim();
     if (!line || line.startsWith('%')) continue;
 
+    // etichetta di BLOCCO operazione (riga di solo "N<num>", dialetto tubo): marca
+    // l'operazione corrente. Serve alla sim taglio tubo per separare troncature/fori
+    // (il percorso tubo è continuo, senza rapidi). Non genera moto.
+    const mBlk = /^N(\d+)$/.exec(line);
+    if (mBlk) { st.block = Number(mBlk[1]); continue; }
+
+    // LinuxCNC: assegnazione parametro (#<nome> = espr  /  #123 = espr)
+    const asg = /^#\s*(<[^>]+>|\d+)\s*=\s*(.+)$/.exec(line);
+    if (asg) {
+      const rhs = lcncReduce(asg[2], lcncParams);
+      const v = rhs === null ? null : lcncArith(rhs.trim());
+      if (v !== null) {
+        const key = asg[1].startsWith('<') ? asg[1].slice(1, -1).trim().toLowerCase() : asg[1];
+        lcncParams.set(key, v);
+      } else {
+        warn(ln, 'Assegnazione parametro non valutabile');
+      }
+      continue;
+    }
+    // LinuxCNC: parole con espressioni — X[#<xscale>*53.] → X53
+    if (line.includes('#') || line.includes('[')) {
+      const red = lcncReduce(line, lcncParams);
+      if (red !== null) line = red;
+    }
+
     // macro / logica parametrica: fuori scope fase 1
     if (line.includes('#') || /^\?|\b(IF|WHILE|GOTO|GOTOF|GOTOB|JMPF|THEN|REPEAT)\b/i.test(line)) {
       warn(ln, 'Riga con macro/logica parametrica ignorata');
@@ -172,6 +333,9 @@ export function parseNC(text, fileName = '') {
       else if (letter === 'M') mCodes.push(value);
       else w[letter] = value;
     }
+    // orientamento utensile (4/5 assi) modale: aggiorna se la riga lo specifica (EI/EJ/EK o A/B/C)
+    const _tax = toolAxisFrom(w, params);
+    if (_tax) { st.toolAxis = _tax.axis; st.tableRot = _tax.rot; }
 
     // dialetto .pgm/.cn: un G-code macchina (>=100) rende la riga una DIRETTIVA,
     // non un moto. M/T/F su queste righe sono parametri della macro (es.
@@ -330,7 +494,7 @@ export function parseNC(text, fileName = '') {
         segments.push({
           type, from, to, pts: [from, to], line: ln, tool: useTool(),
           feed: type === 'feed' ? st.feed : null, len, implicit,
-          rot0, rot1, aux0, aux1,
+          rot0, rot1, aux0, aux1, block: st.block, toolAxis: st.toolAxis, tableRot: st.tableRot,
         });
       }
       st.pos = to;
@@ -342,7 +506,7 @@ export function parseNC(text, fileName = '') {
     if (arc) {
       arc.tool = useTool();
       arc.implicit = implicit;
-      arc.rot0 = rot0; arc.rot1 = rot1; arc.aux0 = aux0; arc.aux1 = aux1;
+      arc.rot0 = rot0; arc.rot1 = rot1; arc.aux0 = aux0; arc.aux1 = aux1; arc.block = st.block; arc.toolAxis = st.toolAxis; arc.tableRot = st.tableRot;
       segments.push(arc);
     } else {
       // fallback: traccia una linea per non perdere il percorso
@@ -351,7 +515,7 @@ export function parseNC(text, fileName = '') {
         segments.push({
           type: 'feed', from, to, pts: [from, to], line: ln,
           tool: useTool(), feed: st.feed, len, implicit,
-          rot0, rot1, aux0, aux1,
+          rot0, rot1, aux0, aux1, block: st.block, toolAxis: st.toolAxis, tableRot: st.tableRot,
         });
       }
     }

@@ -55,6 +55,7 @@ export function createCodePanel(els, cb = {}) {
   let geoLines = new Set();
   let selected = -1;
   let active = -1;
+  let running = -1;   // riga in esecuzione durante la simulazione
   let lang = 'plain';
   // ricerca
   let query = '';
@@ -79,6 +80,7 @@ export function createCodePanel(els, cb = {}) {
       if (geoLines.has(l)) cls.push('geo');
       if (l === selected) cls.push('sel');
       else if (l === active) cls.push('act');
+      if (l === running) cls.push('run');
       if (matchSet && matchSet.has(l)) cls.push(l === curLine ? 'match-cur' : 'match');
       html += `<div class="${cls.join(' ')}" style="top:${i * LINE_H}px" data-l="${l}">` +
               `<span class="ln">${l}</span><span class="tx">${fmt(i)}</span></div>`;
@@ -136,6 +138,7 @@ export function createCodePanel(els, cb = {}) {
       lang = language;
       selected = -1;
       active = -1;
+      running = -1;
       query = ''; matches = []; matchCur = -1;
       spacer.style.height = `${lines.length * LINE_H}px`;
       scroll.scrollTop = 0;
@@ -149,6 +152,13 @@ export function createCodePanel(els, cb = {}) {
     setActive(line) {
       if (line === active) return;
       active = line;
+      render();
+    },
+    /** Evidenzia (e tiene in vista) la riga in esecuzione nella simulazione; -1 = spegni. */
+    follow(line) {
+      if (line === running) return;
+      running = line;
+      if (line > 0) scrollTo(line);
       render();
     },
     search: runSearch,
