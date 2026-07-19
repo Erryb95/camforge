@@ -1,10 +1,13 @@
 // @ts-check
 // POST-PROCESSOR QtPlasmaC ROTARY (taglio tubo su asse A) — dialetto LinuxCNC.
 //
-// Modello di macchina: PIPE/ROTARY a torcia FISSA. L'asse X corre lungo il tubo
-// (mm), l'asse A ruota il tubo (gradi). La geometria da tagliare è definita sul
-// tubo SVOLTO in coordinate (u = ascissa assiale mm, v = ascissa perimetrale mm)
-// e viene AVVOLTA:  A[°] = v / circonferenza · 360   (X = u).
+// Modello di macchina: PIPE/ROTARY. L'asse X corre lungo il tubo (mm), l'asse A
+// RUOTA il tubo attorno al suo asse (gradi). La geometria è definita sullo SVOLTO
+// (u = ascissa assiale mm, v = ascissa perimetrale mm) e viene AVVOLTA. L'angolo
+// di rotazione A è l'ANGOLO GEOMETRICO del punto di sezione = atan2(y,z) (sul
+// tondo coincide con v/circonferenza·360; sul rettangolare NO). X = u.
+// Modo "torcia che segue" (follow): emette anche Z = raggio + cut height per
+// mantenere lo standoff — costante sul tondo, variabile (necessario) sul rett.
 //
 // Convenzioni QtPlasmaC verificate sul file reale samples/cut/plasma_pipe.ngc
 // (post "PlasmaRotary PlasmaC.scpost"):
@@ -18,7 +21,7 @@
 // scelta legittima e più semplice/robusta per la demo di validazione.
 
 import { pierceSeconds } from './gcode.js';
-import { tubePerimeter, tubeRadialAt } from '../tubeGeom.js';
+import { tubePerimeter, tubeRadialAt, tubeSectionAt } from '../tubeGeom.js';
 
 /**
  * @typedef {{u:number, v:number}} UV
@@ -72,9 +75,16 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
   const cutHeight = opts.cutHeight ?? 1.5;
   // Z (solo modo follow): la torcia segue la superficie a standoff costante ⇒
   // Z = distanza radiale del punto + cutHeight. Costante sul tondo, VARIABILE sul
-  // rettangolare (indispensabile lì). La torcia resta sempre sopra la superficie,
-  // quindi anche i rapidi restano collision-safe (i tagli sono fori nel tubo).
+  // rettangolare (indispensabile lì).
   const zAt = (v) => f(tubeRadialAt(v, tube) + cutHeight);
+  // raggio MASSIMO (spigolo sul rett) → Z SICURA per i rapidi: durante un rapido
+  // A spazza anche gli spigoli (raggio maggiore degli estremi), quindi la torcia
+  // deve prima ritrarsi a zSafe per non passarci sotto. Sul tondo maxRadial = R,
+  // quindi zSafe è solo un po' più alta e non cambia il comportamento.
+  const maxRadial = tube.shape === 'rect'
+    ? Math.hypot((tube.width || 0) / 2, (tube.height || 0) / 2)
+    : (tube.diameter || 0) / 2;
+  const zSafe = f(maxRadial + cutHeight + 10);
 
   /** @type {string[]} */ const L = [];
   /** @type {RotaryMove[]} */ const moves = [];
@@ -92,7 +102,12 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
   // riavvolgimenti vicino alla cucitura). prevA parte da 0 (home A0).
   let prevA = 0;
   const wrapTo180 = (d) => ((d % 360) + 540) % 360 - 180;
-  const vDeg = (v) => (perimeter > 0 ? (v / perimeter) * 360 : 0);   // tondo o rett.
+  // A = ANGOLO GEOMETRICO di rotazione del mandrino per portare il punto di
+  // sezione sotto la torcia = atan2(y,z) del punto perimetrale. Sul TONDO è
+  // identico a v/perimetro·360; sul RETTANGOLARE è diverso (l'ascissa cresce
+  // linearmente sulla faccia mentre l'angolo cresce come atan) ⇒ solo così le
+  // feature finiscono nella posizione angolare giusta e coerente con lo Z-follow.
+  const vDeg = (v) => { const p = tubeSectionAt(v, tube); return Math.atan2(p.y, p.z) * 180 / Math.PI; };
   const emitA = (v) => {
     prevA += wrapTo180(vDeg(v) - prevA);
     return f(prevA);
@@ -128,14 +143,18 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
     push(`(contorno ${i + 1}/${contours.length}${c.tag ? ' ' + c.tag : ''})`);
     const lead = c.lead && c.lead.length ? c.lead : null;
     const entry = lead ? lead[0] : c.pts[0];
-    // posizionamento rapido al punto d'attacco (X assiale + A rotazione tubo [+ Z])
-    motion(`G0 X${f(entry.u)} A${emitA(entry.v)}${zWord(entry.v)}`, 'rapid', entry.u, entry.v, null);
+    // posizionamento rapido al punto d'attacco: in modo follow il rapido va a Z
+    // SICURA (torcia ritratta mentre A ruota attraverso gli spigoli), poi si
+    // scende allo standoff di taglio; senza follow è un semplice G0 X A.
+    motion(`G0 X${f(entry.u)} A${emitA(entry.v)}${follow ? ` Z${zSafe}` : ''}`, 'rapid', entry.u, entry.v, null);
+    if (follow) push(`G0 Z${zAt(entry.v)}`);   // discesa allo standoff sul punto d'attacco
     prev = { u: entry.u, v: entry.v };
     push('M03 $0 S1');                   // torcia ON
     if (pierce > 0) push(`G04 P${f(pierce)}`);   // pierce delay
     const emitFeed = (p) => {
       const F = invF(p.u, p.v);
-      motion(`G1 X${f(p.u)} A${emitA(p.v)}${zWord(p.v)}${F !== null ? ` F${f(F)}` : ''}`, 'feed', p.u, p.v, feed);
+      if (F === null) { prev = { u: p.u, v: p.v }; return; }   // moto di lunghezza nulla: in G93 servirebbe una F → non emetterlo
+      motion(`G1 X${f(p.u)} A${emitA(p.v)}${zWord(p.v)} F${f(F)}`, 'feed', p.u, p.v, feed);
       prev = { u: p.u, v: p.v };
     };
     // lead-in (dal 2° punto: il 1° è già il rapido d'attacco)
@@ -144,6 +163,7 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
     const startK = lead && sameUV(lead[lead.length - 1], c.pts[0]) ? 1 : 0;
     for (let k = startK; k < c.pts.length; k++) emitFeed(c.pts[k]);
     push('M05 $0');                      // torcia OFF
+    if (follow) push(`G0 Z${zSafe}`);    // ritrai a Z sicura prima del prossimo rapido
   });
 
   push('M05 $0');

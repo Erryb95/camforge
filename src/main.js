@@ -686,8 +686,10 @@ $('btnDemoRotary').addEventListener('click', () => {
       + `Ø ${ext.suggestedDiameter} mm = un giro esatto.`;
     /** @type {HTMLInputElement} */ ($('rDia')).value = String(ext.suggestedDiameter || 60);
     /** @type {HTMLInputElement} */ ($('rLen')).value = '';
-    mat.value = String(2);
-    applyPreset();
+    // ricostruisce gli spessori per la lega corrente (evita valori inesistenti,
+    // es. 2 mm sulla F5 che parte da 4) e sceglie 2 mm solo se disponibile
+    rebuildThickness();
+    if ([...mat.options].some((o) => o.value === '2')) { mat.value = '2'; applyPreset(); }
     syncShape();
     dlg.hidden = false;
   });

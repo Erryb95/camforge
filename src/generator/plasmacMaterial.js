@@ -6,9 +6,28 @@
 // Noi li generiamo dai preset (dati reali Hypertherm), pronti da caricare in
 // QtPlasmaC e da richiamare nel G-code con M190 P<numero>.
 
-import { PLASMA_MATERIALS } from './rotaryCut.js';
+import { PLASMA_MATERIALS, materialEntries } from './rotaryCut.js';
 
 const round1 = (v) => Math.round(v * 10) / 10;
+
+// Base di numerazione per lega: file di leghe diverse NON riusano gli stessi
+// MATERIAL_NUMBER (altrimenti si sovrascrivono se caricati nella stessa config).
+const ALLOY_BASE = { mild_steel: 1, mild_steel_finecut: 11, stainless: 21, stainless_f5: 31, aluminum: 41 };
+
+/** Numero base dei MATERIAL_NUMBER per una lega. @param {string} key */
+export function alloyBase(key) { return ALLOY_BASE[key] ?? 1; }
+
+/**
+ * Numero materiale QtPlasmaC per (lega, spessore) = base della lega + indice
+ * dello spessore più vicino nella tabella. Coerente con la numerazione del file
+ * esportato ⇒ il G-code può selezionarlo con M190 P<numero>. @param {string} alloyKey @param {number} thickness
+ */
+export function materialNumber(alloyKey, thickness) {
+  const entries = materialEntries(alloyKey);
+  let idx = 0, bd = Infinity;
+  entries.forEach((p, i) => { const d = Math.abs(p.t - thickness); if (d < bd) { bd = d; idx = i; } });
+  return alloyBase(alloyKey) + idx;
+}
 
 /**
  * @typedef {{number:number, name:string, kerf:number, pierceHeight:number,
@@ -86,7 +105,7 @@ export function qtplasmacMaterialFile(materials, opts = {}) {
  */
 export function materialFileForAlloy(alloyKey, opts = {}) {
   const alloy = PLASMA_MATERIALS[alloyKey] || PLASMA_MATERIALS.mild_steel;
-  const start = opts.startNumber ?? 1;
+  const start = opts.startNumber ?? alloyBase(alloyKey);   // numeri unici per lega
   const materials = alloy.entries.map((p, i) => presetToMaterial(p, {
     number: start + i, alloyLabel: alloy.label, cutHeight: opts.cutHeight, piercePct: opts.piercePct,
   }));

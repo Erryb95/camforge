@@ -11,7 +11,7 @@ import { generateRotaryDemo, circleUV, obroundUV, demoPattern,
 import { parseDXF } from '../src/loaders/dxf/parser.js';
 import { tubePerimeter, tubeSectionAt, tubeRadialAt } from '../src/generator/tubeGeom.js';
 import { applyKerfAndLeads, containmentDepthUV, cutParamsFor, MILD_STEEL_PLASMA } from '../src/generator/rotaryCut.js';
-import { materialFileForAlloy, presetToMaterial, qtplasmacMaterialFile } from '../src/generator/plasmacMaterial.js';
+import { materialFileForAlloy, presetToMaterial, qtplasmacMaterialFile, materialNumber } from '../src/generator/plasmacMaterial.js';
 
 const near = (a, b, tol = 1e-6) => assert.ok(Math.abs(a - b) <= tol, `atteso ${b}, ottenuto ${a} (tol ${tol})`);
 
@@ -224,6 +224,42 @@ test('wrapDxfToRotary: tubo RETTANGOLARE + torcia che segue (Z)', async () => {
 test('wrapDxfToRotary: tondo senza follow → nessuna Z', async () => {
   const { gcode } = await wrapDxfToRotary(dxfModel(), { diameter: 60, thickness: 3 });
   assert.ok(!/^G1 .* Z/m.test(gcode));
+});
+
+// --- fix da review adversariale (angolo A rett, safe-Z, M190, G93 F) ---
+test('post rett: A = angolo GEOMETRICO atan2(y,z), non l\'ascissa perimetrale', () => {
+  const rt = { shape: 'rect', width: 40, height: 40, length: 100 };
+  // punto sulla faccia superiore a v=10 → (y=10, z=20): A corretto = atan2(10,20)=26.57°
+  const { text } = postRotaryPlasmaC([{ pts: [{ u: 0, v: 10 }, { u: 5, v: 10 }, { u: 0, v: 10 }] }], rt);
+  const a = +text.match(/G0 X0 A(-?[\d.]+)/)[1];
+  near(a, Math.atan2(10, 20) * 180 / Math.PI, 1e-3);    // ≈26.565, NON 22.5 (=10/160·360)
+});
+
+test('post follow: G0 di retract a Z sicura (> raggio max) + nessun G1 senza F (G93)', () => {
+  const rt = { shape: 'rect', width: 40, height: 40, length: 100 };
+  const { text } = postRotaryPlasmaC([{ pts: circleUV(20, 10, 4).map((p) => ({ u: p.u, v: p.v })) }], rt, { follow: true });
+  const zs = [...text.matchAll(/G0 Z([\d.]+)/g)].map((m) => +m[1]);
+  const safe = Math.hypot(20, 20) + 1.5 + 10;            // maxRadial + cutHeight + clearance
+  assert.ok(zs.some((z) => Math.abs(z - safe) < 1e-3), 'retract a Z sicura presente');
+  assert.equal(text.split('\n').filter((l) => /^G1 /.test(l) && !/ F/.test(l)).length, 0, 'ogni G1 ha F in G93');
+});
+
+test('wrapDxfToRotary: M190 P<n> = numero materiale del material file esportato', async () => {
+  const { gcode } = await wrapDxfToRotary(dxfModel(), { diameter: 60, thickness: 4, materialKey: 'stainless' });
+  const p = +gcode.match(/M190 P(\d+)/)[1];
+  const n = materialNumber('stainless', 4);
+  assert.equal(p, n);
+  assert.ok(materialFileForAlloy('stainless').text.includes(`[MATERIAL_NUMBER_${n}]`));
+});
+
+test('materialNumber: basi distinte per lega (niente collisioni tra file)', () => {
+  assert.notEqual(materialNumber('mild_steel', 2), materialNumber('stainless', 2));
+  assert.notEqual(materialNumber('stainless', 4), materialNumber('aluminum', 4));
+});
+
+test('wrapDxfToRotary: rett forza follow anche senza flag', async () => {
+  const { gcode } = await wrapDxfToRotary(dxfModel(), { shape: 'rect', width: 200, height: 150, thickness: 3 });
+  assert.ok(/^G1 .* Z/m.test(gcode), 'rett → follow forzato → Z presente');
 });
 
 // --- kerf compensation + lead-in (rotaryCut) ---

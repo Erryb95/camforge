@@ -17,6 +17,7 @@ import { buildTubeMesh } from '../loaders/cad/tube3d.js';
 import { postRotaryPlasmaC } from './post/plasmac.js';
 import { closedRingsFromDxf } from './dxfmill.js';
 import { applyKerfAndLeads, cutParamsFor, materialEntries } from './rotaryCut.js';
+import { materialNumber } from './plasmacMaterial.js';
 import { tubePerimeter, tubeSectionAt } from './tubeGeom.js';
 
 /**
@@ -330,6 +331,9 @@ export function dxfDesignExtent(model) {
  */
 export async function wrapDxfToRotary(dxfModel, opts = {}) {
   const shape = opts.shape || 'round';
+  // il rettangolare RICHIEDE la torcia che segue (Z variabile): raggio min sulla
+  // faccia, max sugli spigoli → uno standoff fisso non è mantenibile. Forzalo.
+  const follow = opts.follow ?? (shape === 'rect');
   const contours = contoursFromDxfModel(dxfModel);
   if (!contours.length) throw new Error('nessun contorno CHIUSO nel DXF (servono profili chiusi da tagliare)');
   // bounding box del disegno in (u,v)
@@ -353,9 +357,16 @@ export async function wrapDxfToRotary(dxfModel, opts = {}) {
 
   // preset di taglio dalla lega + spessore (kerf/feed/pierce), con override
   const thickness = opts.thickness ?? 2;
-  const preset = cutParamsFor(thickness, materialEntries(opts.materialKey || 'mild_steel'));
+  const materialKey = opts.materialKey || 'mild_steel';
+  const entries = materialEntries(materialKey);
+  const preset = cutParamsFor(thickness, entries);
   const kerf = opts.kerf ?? preset.kerf;
   const feed = opts.feed ?? preset.feed;
+  // numero materiale QtPlasmaC (per M190) coerente col material file esportato
+  const material = opts.material ?? materialNumber(materialKey, thickness);
+  // avviso se lo spessore è fuori dal range della lega (preset del più vicino)
+  const tMin = Math.min(...entries.map((p) => p.t)), tMax = Math.max(...entries.map((p) => p.t));
+  const outOfRange = thickness < tMin - 1e-9 || thickness > tMax + 1e-9;
 
   // kerf compensation + lead-in/out sui contorni svolti
   const cam = await applyKerfAndLeads(shifted, {
@@ -366,15 +377,16 @@ export async function wrapDxfToRotary(dxfModel, opts = {}) {
   const vSpan = vMax - vMin;
   const topo = cam.sheet ? 'ritaglio sagoma' : 'fori nel tubo';
   const shapeTxt = shape === 'rect' ? `tubo rett. ${tube.width}×${tube.height}` : `tubo Ø${tube.diameter}`;
-  let info = `${cam.contours.length} contorni (${cam.holes} fori · ${topo}) · disegno ${(uMax - uMin).toFixed(0)}×${vSpan.toFixed(0)} mm · ${shapeTxt} (perim. ${perim.toFixed(1)} mm) · kerf ${kerf} mm · feed ${feed} mm/min${opts.follow ? ' · torcia segue (Z)' : ''}`;
+  let info = `${cam.contours.length} contorni (${cam.holes} fori · ${topo}) · disegno ${(uMax - uMin).toFixed(0)}×${vSpan.toFixed(0)} mm · ${shapeTxt} (perim. ${perim.toFixed(1)} mm) · kerf ${kerf} mm · feed ${feed} mm/min${follow ? ' · torcia segue (Z)' : ''}`;
   if (cam.skipped) info += ` · ⚠ ${cam.skipped} contorni < kerf saltati`;
+  if (outOfRange) info += ` · ⚠ spessore ${thickness} mm fuori range ${tMin}–${tMax} mm per la lega: preset del più vicino`;
   if (vSpan > perim + 0.5) info += ` · ⚠ altezza disegno > perimetro: il taglio si sovrappone (>360°)`;
 
   const size = shape === 'rect' ? `${tube.width}x${tube.height}` : `O${tube.diameter}`;
   const name = opts.name || (dxfModel.name || 'dxf').replace(/\.[^.]+$/, '') + `.rotary-${size}.ngc`;
   const r = wrapContoursToRotary(cam.contours, tube, {
-    feed, thickness, pierceMs: preset.pierce * 1000, material: opts.material,
-    follow: opts.follow, cutHeight: opts.cutHeight, name,
+    feed, thickness, pierceMs: preset.pierce * 1000, material,
+    follow, cutHeight: opts.cutHeight, name,
   });
   return { ...r, info };
 }
