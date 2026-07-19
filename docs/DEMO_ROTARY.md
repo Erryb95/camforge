@@ -103,9 +103,18 @@ punto 3D sul tubo: φ = v/R ; { x:u, y:R·sinφ, z:R·cosφ }  (v=0 al centro fa
 numero/URL del thread, e rileggi le regole del forum. Non pubblicare nulla senza l'OK
 dell'utente.
 
+## Input reale: DXF svolto → tubo rotary  ✅
+Oltre alla demo generata, si può **avvolgere un DXF** (il disegno sullo svolto:
+fori/asole/lettere) su un tubo. Carica un `.dxf` → compare **🌀 → Tubo rotary**:
+interpreta `X = asse tubo`, `Y = circonferenza`, propone un Ø che fa stare il disegno
+in un giro (`Ø = altezza/π`), avvolge e genera il G-code QtPlasmaC.
+- `contoursFromDxfModel()` estrae i contorni chiusi (riusa `dxfmill.closedRingsFromDxf`
+  + cerchi/ellissi); `dxfDesignExtent()` suggerisce il Ø; `wrapDxfToRotary()` fa il wrap.
+- Risponde al caso reale del thread (santy: *"cut letters above a tube"*).
+
 ## Limiti attuali / prossimi passi
 - Solo tubo **tondo** (il rettangolare esiste nel motore svolto, non ancora esposto qui).
 - Rotary **semplice** (torcia fissa, no Z/THC). Estensione: post "torcia che segue".
-- Lead-in corto verso lo sfrido; nessuna compensazione kerf (roadmap).
-- Input = pattern demo generato; passo successivo: **input da DXF svolto** (riuso
-  `loaders/dxf/` → contorni (u,v)) e da feature STEP.
+- Lead-in corto verso lo sfrido; nessuna compensazione **kerf** (roadmap).
+- DXF: solo contorni **chiusi**; pannello parametri tubo (oggi Ø via prompt) da rifinire.
+- Prossimo: feature da **STEP**, tubo rettangolare, kerf/lead-in configurabili.

@@ -19,7 +19,7 @@ import { CUT_PROCESSES, DEFAULT_PROCESS, processById } from './sim/processes.js'
 import { foldMeshFromCenterline } from './sim/tubebend.js';  // PIEGATURA tubo: fold barra dritta → pezzo piegato
 import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pezzo 3D: mesh → percorso raster
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
-import { generateRotaryDemo } from './generator/tubeWrap.js';  // DEMO CAM tubo/rotary: svolto → wrap asse A → G-code QtPlasmaC
+import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
 import { MATERIALS, DEFAULT_MATERIAL, materialById, coatingColor } from './sim/materials.js';   // materiali + punta per materiale
 import { LaserTubeSim, outwardNormalAt } from './sim/lasertube.js';   // taglio LASER tubo (troncatura=stacco assiale)
 import { loadLaserHead, placeHead, placeHeadOriented, headScaleFor } from './sim/laserhead.js';
@@ -169,6 +169,7 @@ function displayModel(m, fileName, opts = {}) {
     $('btnGenNc').hidden = !lastStep;
     $('btnDlNc').hidden = true;
     $('btnMillPart').hidden = !isCadPart(model) && !isDxf2d(model);   // → Fresa: pezzo 3D (mesh) o DXF 2.5D
+    $('btnDxfRotary').hidden = !isDxf2d(model);                       // → Tubo rotary: avvolgi il DXF su un tubo
 
     // simulazione asportazione: azzera e mostra i bottoni in base al contenuto
     stockOn = false; matSim = null;
@@ -612,6 +613,34 @@ $('btnDemoRotary').addEventListener('click', () => {
   } catch (err) {
     console.error(err);
     toast(`Demo rotary fallita: ${/** @type {Error} */(err).message}`);
+  }
+});
+
+// DXF → Tubo rotary: avvolge il disegno DXF corrente su un tubo (X=asse tubo,
+// Y=circonferenza) e genera il G-code QtPlasmaC. Il Ø di default fa stare il
+// disegno in un giro; l'utente può cambiarlo.
+$('btnDxfRotary').addEventListener('click', () => {
+  if (!model || !isDxf2d(model)) return;
+  try {
+    const ext = dxfDesignExtent(model);
+    if (!ext.contours) { toast('Nessun contorno chiuso nel DXF: servono profili chiusi da tagliare'); return; }
+    const def = ext.suggestedDiameter || 60;
+    const ans = window.prompt(
+      `Avvolgi il DXF su un tubo.\nDisegno: ${ext.uSpan.toFixed(0)} mm (asse) × ${ext.vSpan.toFixed(0)} mm (circonferenza), ${ext.contours} contorni.\n\nDiametro tubo (mm)? [${def} = un giro esatto]`,
+      String(def));
+    if (ans === null) return;
+    const diameter = parseFloat(ans);
+    if (!(diameter > 0)) { toast('Diametro non valido'); return; }
+    const { model: m, gcode, name, info } = wrapDxfToRotary(model, { diameter });
+    displayModel(m, name);
+    lastGen = { name, text: gcode };
+    lastStep = null;
+    $('btnGenNc').hidden = true;
+    $('btnDlNc').hidden = false;
+    toast(`DXF avvolto su tubo: ${info} — ▶ per simulare, ⬇ NC per scaricarlo`, true);
+  } catch (err) {
+    console.error(err);
+    toast(`Wrap DXF→rotary fallito: ${/** @type {Error} */(err).message}`);
   }
 });
 $('btnFit').addEventListener('click', () => viewer.fit());

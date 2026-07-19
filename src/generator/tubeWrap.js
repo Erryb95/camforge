@@ -15,6 +15,7 @@ import { newBounds, dist3 } from '../core/model.js';
 import { profileFromMeta, guidesFor } from '../core/unroll.js';
 import { buildTubeMesh } from '../loaders/cad/tube3d.js';
 import { postRotaryPlasmaC } from './post/plasmac.js';
+import { closedRingsFromDxf } from './dxfmill.js';
 
 /**
  * @typedef {import('./post/plasmac.js').UV} UV
@@ -194,6 +195,37 @@ export function demoPattern(tube) {
   return cs;
 }
 
+const centroidUV = (pts) => {
+  let u = 0, v = 0;
+  for (const p of pts) { u += p.u; v += p.v; }
+  return { u: u / pts.length, v: v / pts.length };
+};
+
+/**
+ * Helper CONDIVISO: contorni (u,v) → G-code QtPlasmaC + modello avvolto.
+ * Aggiunge un lead-in verso il centroide dove manca.
+ * @param {RotaryContour[]} contours
+ * @param {TubeSpec} tube
+ * @param {{feed?:number, thickness?:number, material?:number|null, name?:string, leadIn?:number}} [opts]
+ */
+export function wrapContoursToRotary(contours, tube, opts = {}) {
+  const leadIn = opts.leadIn ?? 0;
+  const withLeads = contours.map((c) => {
+    if (c.lead || leadIn <= 0) return c;
+    const cen = centroidUV(c.pts);
+    return { ...c, lead: leadFor(c.pts, cen.u, cen.v, leadIn) };
+  });
+  const post = postRotaryPlasmaC(withLeads, tube, {
+    feed: opts.feed ?? 2000,
+    thickness: opts.thickness ?? 2,
+    material: opts.material ?? 0,
+    name: opts.name,
+  });
+  const name = opts.name || `rotary-O${tube.diameter}x${Math.round(tube.length)}.ngc`;
+  const model = buildWrappedModel(post.moves, tube, post.lines, name);
+  return { model, gcode: post.text, name, tube };
+}
+
 /**
  * Pipeline completa della demo di validazione: pattern → wrap → G-code
  * QtPlasmaC → modello avvolto (Svolto + 3D + simulazione).
@@ -203,13 +235,112 @@ export function demoPattern(tube) {
 export function generateRotaryDemo(opts = {}) {
   const tube = { diameter: opts.diameter ?? 60, length: opts.length ?? 300 };
   const contours = demoPattern(tube);
-  const post = postRotaryPlasmaC(contours, tube, {
-    feed: opts.feed ?? 2000,
-    thickness: opts.thickness ?? 2,
-    material: opts.material ?? 0,
-    name: opts.name,
+  return wrapContoursToRotary(contours, tube, {
+    feed: opts.feed, thickness: opts.thickness, material: opts.material,
+    name: opts.name || `rotary-demo-O${tube.diameter}x${tube.length}.ngc`,
   });
-  const name = opts.name || `rotary-demo-O${tube.diameter}x${tube.length}.ngc`;
-  const model = buildWrappedModel(post.moves, tube, post.lines, name);
-  return { model, gcode: post.text, name, tube };
+}
+
+/**
+ * Estrae contorni chiusi (u,v) da un modello DXF 2D: u = X del disegno (asse
+ * tubo), v = Y (circonferenza). Riusa closedRingsFromDxf (concatenazione per
+ * estremità) e aggiunge i segmenti già chiusi (cerchi/ellissi/polilinee chiuse).
+ * @param {import('../core/model.js').SceneModel} model
+ * @returns {RotaryContour[]}
+ */
+export function contoursFromDxfModel(model) {
+  /** @type {RotaryContour[]} */ const out = [];
+  const seen = new Set();
+  const key = (pts) => {
+    const c = centroidUV(pts);
+    let a = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j].u * pts[i].v - pts[i].u * pts[j].v;
+    return `${c.u.toFixed(1)},${c.v.toFixed(1)},${Math.abs(a).toFixed(0)}`;
+  };
+  const add = (pts, tag) => {
+    if (pts.length < 3) return;
+    const k = key(pts);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ pts, tag });
+  };
+  // anelli concatenati (LINE/ARC che formano un profilo chiuso)
+  for (const ring of closedRingsFromDxf(model)) {
+    const pts = ring.map(([x, y]) => ({ u: x, v: y }));
+    pts.push({ ...pts[0] });                       // chiudi
+    add(pts, 'dxf-ring');
+  }
+  // segmenti singoli già chiusi (un CIRCLE/ELLIPSE tessellato = un solo segmento)
+  const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 1e-3;
+  for (const s of model.segments) {
+    if (s.type === 'rapid' || !s.pts || s.pts.length < 8) continue;
+    if (!near(s.pts[0], s.pts[s.pts.length - 1])) continue;
+    add(s.pts.map((p) => ({ u: p.x, v: p.y })), 'dxf-loop');
+  }
+  return out;
+}
+
+/**
+ * Estensione del disegno DXF in (u,v) + Ø suggerito perché l'altezza del disegno
+ * copra esattamente un giro (circonferenza = altezza ⇒ Ø = altezza/π).
+ * @param {import('../core/model.js').SceneModel} model
+ * @returns {{uSpan:number, vSpan:number, suggestedDiameter:number, contours:number}}
+ */
+export function dxfDesignExtent(model) {
+  const contours = contoursFromDxfModel(model);
+  let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  for (const c of contours) for (const p of c.pts) {
+    if (p.u < uMin) uMin = p.u; if (p.u > uMax) uMax = p.u;
+    if (p.v < vMin) vMin = p.v; if (p.v > vMax) vMax = p.v;
+  }
+  const vSpan = vMax > vMin ? vMax - vMin : 0;
+  return {
+    uSpan: uMax > uMin ? uMax - uMin : 0,
+    vSpan,
+    // arrotonda per ECCESSO a 0.1 mm ⇒ la circonferenza copre sempre l'altezza
+    suggestedDiameter: vSpan > 0 ? Math.ceil((vSpan / Math.PI) * 10) / 10 : 60,
+    contours: contours.length,
+  };
+}
+
+/**
+ * DXF 2D (disegno sullo SVOLTO) → wrap sul tubo → G-code QtPlasmaC. Il disegno è
+ * interpretato: X = asse tubo (mm), Y = circonferenza (mm). Se la lunghezza non è
+ * data, si ricava dall'estensione del disegno; l'origine u è portata a un piccolo
+ * margine dall'inizio. Segnala se l'altezza del disegno supera la circonferenza.
+ * @param {import('../core/model.js').SceneModel} dxfModel
+ * @param {Partial<TubeSpec> & {feed?:number, thickness?:number, material?:number|null, name?:string, leadIn?:number, margin?:number}} opts
+ * @returns {{model:import('../core/model.js').SceneModel, gcode:string, name:string, tube:TubeSpec, info:string}}
+ */
+export function wrapDxfToRotary(dxfModel, opts = {}) {
+  const diameter = opts.diameter ?? 60;
+  const contours = contoursFromDxfModel(dxfModel);
+  if (!contours.length) throw new Error('nessun contorno CHIUSO nel DXF (servono profili chiusi da tagliare)');
+  // bounding box del disegno in (u,v)
+  let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  for (const c of contours) for (const p of c.pts) {
+    if (p.u < uMin) uMin = p.u; if (p.u > uMax) uMax = p.u;
+    if (p.v < vMin) vMin = p.v; if (p.v > vMax) vMax = p.v;
+  }
+  const margin = opts.margin ?? 10;
+  // trasla u così che il disegno parta a `margin`; centra v attorno a 0 (sommità)
+  const du = margin - uMin;
+  const vMid = (vMin + vMax) / 2;
+  const shifted = contours.map((c) => ({
+    ...c, pts: c.pts.map((p) => ({ u: p.u + du, v: p.v - vMid })),
+  }));
+  const length = opts.length ?? (uMax - uMin + 2 * margin);
+  const tube = { diameter, length };
+
+  const circ = Math.PI * diameter;
+  const vSpan = vMax - vMin;
+  let info = `${contours.length} contorni · disegno ${(uMax - uMin).toFixed(0)}×${vSpan.toFixed(0)} mm · tubo Ø${diameter} (circonf. ${circ.toFixed(1)} mm) · L ${length.toFixed(0)} mm`;
+  if (vSpan > circ + 0.5) info += ` · ⚠ altezza disegno > circonferenza: il taglio si sovrappone (>360°)`;
+
+  const name = opts.name || (dxfModel.name || 'dxf').replace(/\.[^.]+$/, '') + `.rotary-O${diameter}.ngc`;
+  const r = wrapContoursToRotary(shifted, tube, {
+    feed: opts.feed, thickness: opts.thickness, material: opts.material,
+    name, leadIn: opts.leadIn ?? 2,
+  });
+  return { ...r, info };
 }

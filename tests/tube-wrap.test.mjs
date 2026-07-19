@@ -3,8 +3,12 @@
 // del SceneModel (sync seg.line ↔ riga del G-code emesso).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { postRotaryPlasmaC, vToDegrees, degreesToV } from '../src/generator/post/plasmac.js';
-import { generateRotaryDemo, circleUV, obroundUV, demoPattern } from '../src/generator/tubeWrap.js';
+import { generateRotaryDemo, circleUV, obroundUV, demoPattern,
+  contoursFromDxfModel, wrapDxfToRotary, dxfDesignExtent } from '../src/generator/tubeWrap.js';
+import { parseDXF } from '../src/loaders/dxf/parser.js';
 
 const near = (a, b, tol = 1e-6) => assert.ok(Math.abs(a - b) <= tol, `atteso ${b}, ottenuto ${a} (tol ${tol})`);
 
@@ -99,4 +103,44 @@ test('demoPattern: numero di contorni atteso (2 file fori + 2 asole)', () => {
   const cs = demoPattern({ diameter: 60, length: 300 });
   assert.equal(cs.length, 10);                       // 4 top + 4 side + 2 asole
   assert.ok(cs.every((c) => c.pts.length >= 3 && c.lead && c.lead.length === 2));
+});
+
+// --- DXF svolto → wrap rotary ---
+const DXF = fileURLToPath(new URL('../samples/dxf/piastra-4fori.dxf', import.meta.url));
+const dxfModel = () => parseDXF(readFileSync(DXF, 'utf8'), 'piastra-4fori.dxf');
+
+test('contoursFromDxfModel: estrae i contorni chiusi (piastra + 4 fori)', () => {
+  const cs = contoursFromDxfModel(dxfModel());
+  assert.equal(cs.length, 5);                        // 1 esterno + 4 fori
+  assert.ok(cs.every((c) => c.pts.length >= 3 && 'u' in c.pts[0] && 'v' in c.pts[0]));
+});
+
+test('dxfDesignExtent: Ø suggerito = altezza disegno / π', () => {
+  const e = dxfDesignExtent(dxfModel());
+  assert.equal(e.contours, 5);
+  assert.ok(e.uSpan > 0 && e.vSpan > 0);
+  near(e.suggestedDiameter, Math.ceil((e.vSpan / Math.PI) * 10) / 10, 1e-9);
+  assert.ok(Math.PI * e.suggestedDiameter >= e.vSpan, 'la circonferenza copre l\'altezza');
+});
+
+test('wrapDxfToRotary: DXF → QtPlasmaC + modello avvolto (Ø = un giro)', () => {
+  const m0 = dxfModel();
+  const D = dxfDesignExtent(m0).suggestedDiameter;
+  const { model, gcode, name, tube, info } = wrapDxfToRotary(m0, { diameter: D });
+  assert.ok(name.endsWith('.ngc') && name.includes('rotary'));
+  assert.equal(tube.diameter, D);
+  assert.ok(gcode.includes('#<tube-cut>=1') && /^M03 \$0 S1$/m.test(gcode));
+  assert.ok(model.segments.length > 20 && model.mesh.indices.length > 0);
+  assert.equal(model.meta.unrollAvailable, true);
+  assert.ok(typeof info === 'string' && info.includes('contorni'));
+  // con Ø = altezza/π il disegno sta in ~un giro: nessun avviso di sovrapposizione
+  assert.ok(!info.includes('sovrappone'), info);
+  // ogni punto giace sulla superficie del tubo
+  const R = D / 2;
+  for (const s of model.segments) for (const p of s.pts) near(Math.hypot(p.y, p.z), R, 1e-6);
+});
+
+test('wrapDxfToRotary: senza contorni chiusi → errore chiaro', () => {
+  const empty = { name: 'x.dxf', segments: [], meta: { dialect: 'DXF' } };
+  assert.throws(() => wrapDxfToRotary(empty, { diameter: 50 }), /contorno CHIUSO/);
 });
