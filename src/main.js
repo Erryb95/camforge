@@ -19,6 +19,7 @@ import { CUT_PROCESSES, DEFAULT_PROCESS, processById } from './sim/processes.js'
 import { foldMeshFromCenterline } from './sim/tubebend.js';  // PIEGATURA tubo: fold barra dritta → pezzo piegato
 import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pezzo 3D: mesh → percorso raster
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
+import { generateRotaryDemo } from './generator/tubeWrap.js';  // DEMO CAM tubo/rotary: svolto → wrap asse A → G-code QtPlasmaC
 import { MATERIALS, DEFAULT_MATERIAL, materialById, coatingColor } from './sim/materials.js';   // materiali + punta per materiale
 import { LaserTubeSim, outwardNormalAt } from './sim/lasertube.js';   // taglio LASER tubo (troncatura=stacco assiale)
 import { loadLaserHead, placeHead, placeHeadOriented, headScaleFor } from './sim/laserhead.js';
@@ -125,8 +126,27 @@ async function loadText(fileName, text) {
       toast('Caricamento motore geometrico (WASM)…', true);
       res.model = await res.model;
     }
-    model = res.model;
-    lineToSegs = new Map();
+    displayModel(res.model, fileName, { sourceText: text, usedFallback: res.usedFallback, t0 });
+  } catch (err) {
+    console.error(err);
+    toast(`Errore nel caricamento di ${fileName}: ${/** @type {Error} */(err).message}`);
+  }
+}
+
+/**
+ * Mostra un SceneModel già pronto nel viewer. Usato dal caricamento file e dai
+ * generatori che costruiscono il modello direttamente (es. demo tubo rotary):
+ * il modello porta i suoi rawLines (il G-code emesso) e seg.line che vi punta,
+ * quindi la sincronizzazione codice↔3D funziona come per un file caricato.
+ * @param {import('./core/model.js').SceneModel} m
+ * @param {string} fileName
+ * @param {{sourceText?:string|Uint8Array, usedFallback?:boolean, t0?:number}} [opts]
+ */
+function displayModel(m, fileName, opts = {}) {
+  const t0 = opts.t0 ?? performance.now();
+  const text = opts.sourceText;
+  model = m;
+  lineToSegs = new Map();
     const geoLines = new Set();
     for (const s of model.segments) {
       geoLines.add(s.line);
@@ -189,11 +209,7 @@ async function loadText(fileName, text) {
     const ms = (performance.now() - t0).toFixed(0);
     const wtxt = model.warnings.length ? ` · ${model.warnings.length} avvisi` : '';
     toast(`Caricato ${fileName}: ${model.segments.length} segmenti in ${ms} ms${wtxt}`, true);
-    if (res.usedFallback) toast(`Estensione sconosciuta: interpretato come G-code`, true);
-  } catch (err) {
-    console.error(err);
-    toast(`Errore nel caricamento di ${fileName}: ${/** @type {Error} */(err).message}`);
-  }
+    if (opts.usedFallback) toast(`Estensione sconosciuta: interpretato come G-code`, true);
 }
 
 async function loadFile(file) {
@@ -580,6 +596,24 @@ $('fileInput').addEventListener('change', (e) => {
   input.value = '';
 });
 $('btnDemo').addEventListener('click', loadDemo);
+
+// DEMO CAM tubo/rotary: pattern sullo svolto → wrap su asse A → G-code QtPlasmaC
+// → modello avvolto sul tubo (Svolto + 3D + simulazione). Il G-code emesso è
+// mostrato nel pannello codice (sync con il 3D) e scaricabile con ⬇ NC.
+$('btnDemoRotary').addEventListener('click', () => {
+  try {
+    const { model: m, gcode, name } = generateRotaryDemo();
+    displayModel(m, name);
+    lastGen = { name, text: gcode };
+    lastStep = null;
+    $('btnGenNc').hidden = true;
+    $('btnDlNc').hidden = false;
+    toast(`Demo tubo rotary: Ø60×300, ${m.segments.length} segmenti · G-code QtPlasmaC (X/A) pronto — ▶ per simulare, ⬇ NC per scaricarlo`, true);
+  } catch (err) {
+    console.error(err);
+    toast(`Demo rotary fallita: ${/** @type {Error} */(err).message}`);
+  }
+});
 $('btnFit').addEventListener('click', () => viewer.fit());
 $('btnStock').addEventListener('click', () => setStockMode(!stockOn));
 
