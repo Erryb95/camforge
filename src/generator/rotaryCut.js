@@ -59,19 +59,30 @@ export function pointInRingUV(p, ring) {
 }
 
 /**
- * Profondità di contenimento (0 = più esterno). Un anello A è contenuto da O se
- * il CENTROIDE di A è dentro O E |area(O)| > |area(A)|: il probe sul centroide è
- * robusto ai vertici sul bordo (cerchio inscritto), il guard sull'area risolve i
- * casi CONCENTRICI (stesso centroide) dove il solo punto non distingue chi
- * contiene chi. @param {{pts:{u:number,v:number}[]}[]} contours
+ * A è contenuto in O se la MAGGIORANZA dei vertici di A cade dentro O. Robusto
+ * per contorni NON convessi (un singolo centroide-media può cadere fuori dal
+ * poligono a C/U e falsare l'annidamento); per contorni disgiunti non
+ * intersecantisi la frazione è ~0 o ~1. @param {{u,v}[]} inner @param {{u,v}[]} outer
+ */
+function ringInsideUV(inner, outer) {
+  let cnt = 0;
+  for (const p of inner) if (pointInRingUV(p, outer)) cnt++;
+  return cnt * 2 > inner.length;
+}
+
+/**
+ * Profondità di contenimento (0 = più esterno). A è contenuto da O se la
+ * maggioranza dei vertici di A è dentro O E |area(O)| > |area(A)| (il guard
+ * sull'area risolve i casi concentrici). Il punto di chiusura duplicato viene
+ * tolto per non distorcere il conteggio. @param {{pts:{u:number,v:number}[]}[]} contours
  */
 export function containmentDepthUV(contours) {
-  const probes = contours.map((c) => centroidUV(c.pts));
-  const areas = contours.map((c) => Math.abs(signedAreaUV(c.pts)));
-  return contours.map((_, i) => {
+  const rings = contours.map((c) => stripClose(c.pts));
+  const areas = rings.map((r) => Math.abs(signedAreaUV(r)));
+  return rings.map((ri, i) => {
     let d = 0;
-    contours.forEach((o, j) => {
-      if (i !== j && areas[j] > areas[i] && pointInRingUV(probes[i], o.pts)) d++;
+    rings.forEach((rj, j) => {
+      if (i !== j && areas[j] > areas[i] && ringInsideUV(ri, rj)) d++;
     });
     return d;
   });
@@ -126,9 +137,19 @@ export function leadInUV(ring, hole, opts = {}) {
 
 /**
  * Applica KERF compensation + LEAD-IN/OUT a un set di contorni (u,v) chiusi.
+ *
+ * TOPOLOGIA (chi è foro / chi è perimetro):
+ *  - `tube`  : lo stock è la parete del tubo ⇒ i contorni top-level sono FORI
+ *              (si asporta l'interno). Caso tipico "features nel tubo".
+ *  - `sheet` : si ritaglia una sagoma svolta ⇒ il contorno più esterno è il
+ *              PERIMETRO del pezzo, quelli annidati sono fori.
+ *  - `auto`  : sheet se c'è UN solo contorno top-level che ne racchiude altri,
+ *              altrimenti tube. (default)
+ * Il segno del kerf segue: FORO → −kerf/2 (torcia dentro), PERIMETRO → +kerf/2.
+ *
  * @param {{pts:{u:number,v:number}[], tag?:string}[]} contours
- * @param {{kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number}} [opts]
- * @returns {Promise<{contours:{pts:{u:number,v:number}[], lead:{u:number,v:number}[], tag?:string}[], skipped:number, holes:number}>}
+ * @param {{kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number, topology?:'auto'|'tube'|'sheet'}} [opts]
+ * @returns {Promise<{contours:{pts:{u:number,v:number}[], lead:{u:number,v:number}[], tag?:string}[], skipped:number, holes:number, sheet:boolean}>}
  */
 export async function applyKerfAndLeads(contours, opts = {}) {
   const kerf = opts.kerf ?? 0;
@@ -136,52 +157,59 @@ export async function applyKerfAndLeads(contours, opts = {}) {
   const leadLen = opts.leadLen ?? 3;
   const overcut = opts.overcut ?? 0;
   const depth = containmentDepthUV(contours);
+  const nTop = depth.filter((d) => d === 0).length;
+  const mode = opts.topology || 'auto';
+  const sheet = mode === 'sheet' ? true : mode === 'tube' ? false : (nTop === 1 && contours.length > 1);
+  // sheet: foro = annidamento DISPARI · tube: foro = annidamento PARI (lo sfondo è pezzo)
+  const isHole = (d) => (sheet ? d % 2 === 1 : d % 2 === 0);
 
-  /** @type {{pts:{u:number,v:number}[], lead:{u:number,v:number}[], tag?:string}[]} */
-  const out = [];
+  /** @type {{ring:{u:number,v:number}[], hole:boolean, depth:number, tag?:string}[]} */
+  const items = [];
   let skipped = 0, holes = 0;
 
   for (let i = 0; i < contours.length; i++) {
-    const hole = depth[i] % 2 === 1;
+    const hole = isHole(depth[i]);
     if (hole) holes++;
     let ring = stripClose(contours[i].pts);
-    // forza orientamento CCW (area>0): con Clipper +delta = espansione
-    if (signedAreaUV(ring) < 0) ring = ring.slice().reverse();
+    if (signedAreaUV(ring) < 0) ring = ring.slice().reverse();   // CCW per l'offset
 
+    /** @type {{u:number,v:number}[][]} */
+    let rings;
     if (kerf > 0) {
       const sign = hole ? -1 : +1;                       // fuori per esterno, dentro per foro
-      const paths = [ring.map((p) => [p.u, p.v])];
-      const res = await offsetClosed(paths, (sign * kerf) / 2, { join: 'round' });
-      if (!res.length) { skipped++; continue; }          // foro più piccolo del kerf: non tagliabile
-      // prendi l'anello di area massima
-      let bestRing = res[0], ba = -Infinity;
-      for (const rr of res) { const a = Math.abs(shoelaceXY(rr)); if (a > ba) { ba = a; bestRing = rr; } }
-      ring = bestRing.map(([u, v]) => ({ u, v }));
-      if (signedAreaUV(ring) < 0) ring = ring.slice().reverse();
+      const res = await offsetClosed([ring.map((p) => [p.u, p.v])], (sign * kerf) / 2, { join: 'round' });
+      if (!res.length) { skipped++; continue; }          // contorno più piccolo del kerf: non tagliabile
+      // TUTTI gli anelli risultanti: un contorno strozzato può spezzarsi in più
+      // lobi → ciascuno è un taglio separato (niente geometria persa in silenzio)
+      rings = res.map((rr) => rr.map(([u, v]) => ({ u, v })));
+    } else {
+      rings = [ring];
     }
+    for (const rg of rings) items.push({ ring: rg, hole, depth: depth[i], tag: contours[i].tag });
+  }
 
-    // DIREZIONE DI TAGLIO (convenzione Hypertherm, swirl orario: il bordo buono
-    // resta a destra dell'avanzamento): contorni ESTERNI in senso ORARIO (area<0),
-    // FORI in senso ANTIORARIO (area>0) ⇒ smusso/bava sullo sfrido, bordo squadrato
-    // sul pezzo. (ring è CCW dopo l'offset: gira l'esterno.)
-    if (!hole && signedAreaUV(ring) > 0) ring = ring.slice().reverse();
+  // ORDINE inside-out: prima i contorni più interni (annidamento alto), il
+  // perimetro esterno per ultimo (il pezzo resta fermo finché è tagliato).
+  items.sort((a, b) => b.depth - a.depth);
 
-    const lead = leadInUV(ring, hole, { type: leadType, len: leadLen });
+  /** @type {{pts:{u:number,v:number}[], lead:{u:number,v:number}[], tag?:string}[]} */
+  const out = [];
+  for (const it of items) {
+    let ring = it.ring;
+    if (signedAreaUV(ring) < 0) ring = ring.slice().reverse();   // normalizza CCW
+    // DIREZIONE DI TAGLIO (convenzione Hypertherm, swirl orario): contorni
+    // ESTERNI in senso ORARIO (area<0), FORI in senso ANTIORARIO (area>0) ⇒
+    // smusso/bava sullo sfrido, bordo squadrato sul pezzo.
+    if (!it.hole) ring = ring.slice().reverse();          // da CCW a CW per gli esterni
+    const lead = leadInUV(ring, it.hole, { type: leadType, len: leadLen });
     const pts = ring.concat([{ ...ring[0] }]);
     // OVERCUT (overburn) SOLO sui FORI: prosegue oltre lo start sul kerf già
     // tagliato per chiudere pulito il foro (default QtPlasmaC #<oclength> = 4 mm)
-    if (hole && overcut > 0 && ring.length > 1) {
+    if (it.hole && overcut > 0 && ring.length > 1) {
       const t = norm(ring[1].u - ring[0].u, ring[1].v - ring[0].v);
       pts.push({ u: ring[0].u + t.x * overcut, v: ring[0].v + t.y * overcut });
     }
-    out.push({ pts, lead, tag: contours[i].tag });
+    out.push({ pts, lead, tag: it.tag });
   }
-  return { contours: out, skipped, holes };
-}
-
-/** Shoelace su [[x,y]...] (per scegliere l'anello di area massima dopo l'offset). */
-function shoelaceXY(ring) {
-  let a = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
-  return a / 2;
+  return { contours: out, skipped, holes, sheet };
 }

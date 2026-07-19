@@ -146,6 +146,10 @@ export function obroundUV(cu, cv, len, width, axis = 'u', arc = 8) {
   // semicerchio sinistro/basso
   for (let i = 0; i <= arc; i++) pts.push(along(-1, Math.PI / 2 + (Math.PI * i) / arc));
   pts.push({ ...pts[0] });   // chiudi
+  // orientamento CCW coerente (come circleUV): axis 'v' uscirebbe CW altrimenti
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j].u * pts[i].v - pts[i].u * pts[j].v;
+  if (a < 0) pts.reverse();
   return pts;
 }
 
@@ -313,7 +317,7 @@ export function dxfDesignExtent(model) {
  * Applica kerf compensation (± kerf/2 secondo il contenimento) + lead-in/out.
  * feed/kerf/pierce di default vengono dal preset plasma per lo spessore.
  * @param {import('../core/model.js').SceneModel} dxfModel
- * @param {Partial<TubeSpec> & {feed?:number, thickness?:number, kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number, material?:number|null, name?:string, leadIn?:number, margin?:number}} opts
+ * @param {Partial<TubeSpec> & {feed?:number, thickness?:number, kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number, topology?:'auto'|'tube'|'sheet', material?:number|null, name?:string, leadIn?:number, margin?:number}} opts
  * @returns {Promise<{model:import('../core/model.js').SceneModel, gcode:string, name:string, tube:TubeSpec, info:string}>}
  */
 export async function wrapDxfToRotary(dxfModel, opts = {}) {
@@ -344,13 +348,15 @@ export async function wrapDxfToRotary(dxfModel, opts = {}) {
 
   // kerf compensation + lead-in/out sui contorni svolti
   const cam = await applyKerfAndLeads(shifted, {
-    kerf, lead: opts.lead ?? 'arc', leadLen: opts.leadLen ?? Math.max(2, kerf * 2), overcut: opts.overcut ?? 0,
+    kerf, lead: opts.lead ?? 'arc', leadLen: opts.leadLen ?? Math.max(2, kerf * 2),
+    overcut: opts.overcut ?? 0, topology: opts.topology ?? 'auto',
   });
 
   const circ = Math.PI * diameter;
   const vSpan = vMax - vMin;
-  let info = `${cam.contours.length} contorni (${cam.holes} fori) · disegno ${(uMax - uMin).toFixed(0)}×${vSpan.toFixed(0)} mm · tubo Ø${diameter} (circonf. ${circ.toFixed(1)} mm) · kerf ${kerf} mm · feed ${feed} mm/min`;
-  if (cam.skipped) info += ` · ⚠ ${cam.skipped} fori < kerf saltati`;
+  const topo = cam.sheet ? 'ritaglio sagoma' : 'fori nel tubo';
+  let info = `${cam.contours.length} contorni (${cam.holes} fori · ${topo}) · disegno ${(uMax - uMin).toFixed(0)}×${vSpan.toFixed(0)} mm · tubo Ø${diameter} (circonf. ${circ.toFixed(1)} mm) · kerf ${kerf} mm · feed ${feed} mm/min`;
+  if (cam.skipped) info += ` · ⚠ ${cam.skipped} contorni < kerf saltati`;
   if (vSpan > circ + 0.5) info += ` · ⚠ altezza disegno > circonferenza: il taglio si sovrappone (>360°)`;
 
   const name = opts.name || (dxfModel.name || 'dxf').replace(/\.[^.]+$/, '') + `.rotary-O${diameter}.ngc`;

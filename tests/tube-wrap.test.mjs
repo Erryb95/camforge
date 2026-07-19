@@ -51,14 +51,17 @@ test('postRotaryPlasmaC: struttura QtPlasmaC (X/A, tube-cut, M03 $0 S1/M05 $0, p
   assert.ok(/^G04 P/m.test(text), 'pierce delay presente');
   // ogni riga di moto è X…A…; e i moves puntano a righe reali coerenti
   assert.ok(moves.length > 0);
+  const wrap180 = (d) => ((d % 360) + 540) % 360 - 180;
   for (const mv of moves) {
     const ln = lines[mv.line - 1];
     assert.ok(/^G[01] X-?[\d.]+ A-?[\d.]+/.test(ln), `riga moto malformata: ${ln}`);
     assert.equal(ln.startsWith('G0 ') ? 'rapid' : 'feed', mv.type);
-    // l'angolo A nella riga corrisponde al v del move
+    // l'angolo A (shortest-path) è congruente a v/circonf·360 modulo 360°
     const a = +ln.match(/A(-?[\d.]+)/)[1];
-    near(a, vToDegrees(mv.v, tube.diameter), 1e-3);
+    near(wrap180(a - vToDegrees(mv.v, tube.diameter)), 0, 1e-3);
   }
+  // feed inverse-time: G93 nel preambolo, G94 ripristinato, F su moti di taglio
+  assert.ok(/^G93$/m.test(text) && /^G94$/m.test(text), 'G93/G94 inverse-time');
 });
 
 test('postRotaryPlasmaC: material null omette M190', () => {
@@ -164,12 +167,24 @@ test('applyKerfAndLeads: esterno cresce, foro rimpicciolisce di kerf/2', async (
   const kerf = 2;
   const outer = { pts: sqUV(100), tag: 'perimetro' };
   const hole = { pts: sqUV(20), tag: 'foro' };
-  const { contours, holes } = await applyKerfAndLeads([outer, hole], { kerf, lead: 'none' });
+  const { contours, holes, sheet } = await applyKerfAndLeads([outer, hole], { kerf, lead: 'none' });
   assert.equal(holes, 1);
+  assert.equal(sheet, true);                 // 1 esterno che ne racchiude 1 → modo sheet
   const span = (pts, k) => Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k]));
-  // il perimetro (100) offset +kerf/2 → ~102 ; il foro (20) offset −kerf/2 → ~18
-  near(span(contours[0].pts, 'u'), 102, 0.2);
-  near(span(contours[1].pts, 'u'), 18, 0.2);
+  const spans = contours.map((c) => span(c.pts, 'u')).sort((a, b) => a - b);
+  // il foro (20) offset −kerf/2 → ~18 ; il perimetro (100) offset +kerf/2 → ~102 (ordine inside-out)
+  near(spans[0], 18, 0.2);
+  near(spans[1], 102, 0.2);
+});
+
+test('applyKerfAndLeads: modo TUBE — fori indipendenti si rimpiccioliscono (−kerf/2)', async () => {
+  const a = { pts: sqUV(20, -40, 0) };       // due contorni SEPARATI, entrambi top-level
+  const b = { pts: sqUV(20, 40, 0) };
+  const { contours, holes, sheet } = await applyKerfAndLeads([a, b], { kerf: 2, lead: 'none' });
+  assert.equal(sheet, false);                // nessun perimetro che racchiude → tube
+  assert.equal(holes, 2);                    // entrambi sono fori nel tubo
+  const span = (pts) => Math.max(...pts.map((p) => p.u)) - Math.min(...pts.map((p) => p.u));
+  for (const c of contours) near(span(c.pts), 18, 0.2);   // 20 − kerf/2 → 18
 });
 
 test('applyKerfAndLeads: lead-in termina esattamente su pts[0], dal lato sfrido', async () => {

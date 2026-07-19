@@ -128,7 +128,12 @@
         <option value="none">nessuno</option>
       </select></label>
       <label>Lead-in (mm)<input type="number" id="rLeadLen" min="0" step="0.5" value="3"></label>
-      <label>Overcut fori (mm)<input type="number" id="rOvercut" min="0" step="0.5" value="0"></label>
+      <label>Overcut fori (mm)<input type="number" id="rOvercut" min="0" step="0.5" value="4"></label>
+      <label>Topologia<select id="rTopo">
+        <option value="auto" selected>auto</option>
+        <option value="tube">fori nel tubo</option>
+        <option value="sheet">ritaglia sagoma</option>
+      </select></label>
     </div>
     <div class="modal-actions">
       <button id="rotaryCancel">Annulla</button>

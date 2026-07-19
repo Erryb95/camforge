@@ -124,7 +124,16 @@ parametri tubo** (`#rotaryDlg`):
   QtPlasmaC `#<oclength>` = 4 mm).
 - **Preset materiale/spessore** con **dati reali Hypertherm Powermax SYNC** (doc 810500MU
   R4, aria): kerf/feed/pierce per acciaio dolce 1–10 mm (`MILD_STEEL_PLASMA`).
-- **Containment robusto** (centroide + guard sull'area) per casi annidati/concentrici/inscritti.
+- **Feed corretto sui moti rotativi**: G-code in **G93 inverse-time** (`F = 1/T`, T = lunghezza
+  superficie/velocità) → la velocità di taglio rispetta le cut chart su moti assiali, di sola
+  rotazione e misti (F in mm/min su un moto di sola A verrebbe letto come gradi/min).
+- **Asse A shortest-path**: ogni angolo è l'equivalente più vicino al precedente → niente giri
+  lunghi/riavvolgimenti attorno al tubo.
+- **Topologia** (auto/tube/sheet): su tubo lo stock è la parete → i contorni top-level sono
+  **fori**; `auto` sceglie "ritaglio sagoma" solo se c'è un unico perimetro che racchiude gli altri.
+- **Containment robusto** (frazione di vertici interni + guard sull'area) per annidati/concentrici/
+  inscritti/non-convessi; **offset che spezza** un foro in più lobi → ogni lobo è un taglio;
+  **ordine inside-out** (interni prima). Pannello iterabile senza ricaricare il DXF.
 
 Esempi DXF reali per il test in `samples/dxf/real/` (MIT, repo jscad/sample-files):
 `squareandcircle.dxf` (piastra + foro, mostra il kerf), `heart.dxf`, `texts.dxf`.

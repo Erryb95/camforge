@@ -34,6 +34,7 @@ let model = /** @type {import('./core/model.js').SceneModel|null} */ (null);
 let lineToSegs = new Map();
 let lastStep = /** @type {{name:string, text:string}|null} */ (null);   // sorgente per "→ NC"
 let lastGen = /** @type {{name:string, text:string}|null} */ (null);    // ultimo NC generato
+let rotarySrc = /** @type {import('./core/model.js').SceneModel|null} */ (null);   // DXF sorgente per il wrap rotary (persiste dopo il wrap)
 // simulazione asportazione materiale (Z-map)
 let matSim = /** @type {MaterialSim5|null} */ (null);
 let stockOn = false;
@@ -122,6 +123,7 @@ $('searchPrev').addEventListener('click', () => codePanel.searchPrev());
 async function loadText(fileName, text) {
   try {
     const t0 = performance.now();
+    rotarySrc = null;                 // nuovo file caricato: dimentica il DXF sorgente del wrap
     const res = parseFile(fileName, text);
     if (res.model && typeof (/** @type {any} */ (res.model)).then === 'function') {
       toast('Caricamento motore geometrico (WASM)…', true);
@@ -170,7 +172,10 @@ function displayModel(m, fileName, opts = {}) {
     $('btnGenNc').hidden = !lastStep;
     $('btnDlNc').hidden = true;
     $('btnMillPart').hidden = !isCadPart(model) && !isDxf2d(model);   // → Fresa: pezzo 3D (mesh) o DXF 2.5D
-    $('btnDxfRotary').hidden = !isDxf2d(model);                       // → Tubo rotary: avvolgi il DXF su un tubo
+    // → Tubo rotary: ricorda il DXF sorgente così il pannello resta usabile per
+    // ri-tarare i parametri anche dopo aver mostrato il modello avvolto (QTPLASMAC)
+    if (isDxf2d(m)) rotarySrc = m;
+    $('btnDxfRotary').hidden = !rotarySrc;
 
     // simulazione asportazione: azzera e mostra i bottoni in base al contenuto
     stockOn = false; matSim = null;
@@ -636,8 +641,8 @@ $('btnDemoRotary').addEventListener('click', () => {
   dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
 
   $('btnDxfRotary').addEventListener('click', () => {
-    if (!model || !isDxf2d(model)) return;
-    const ext = dxfDesignExtent(model);
+    if (!rotarySrc) return;
+    const ext = dxfDesignExtent(rotarySrc);
     if (!ext.contours) { toast('Nessun contorno chiuso nel DXF: servono profili chiusi da tagliare'); return; }
     $('rotaryInfo').textContent =
       `Disegno: ${ext.uSpan.toFixed(0)} mm (asse tubo) × ${ext.vSpan.toFixed(0)} mm (circonferenza) · ${ext.contours} contorni. `
@@ -659,16 +664,17 @@ $('btnDemoRotary').addEventListener('click', () => {
     const lead = /** @type {HTMLSelectElement} */ ($('rLead')).value;
     const leadLen = parseFloat(/** @type {HTMLInputElement} */ ($('rLeadLen')).value);
     const overcut = parseFloat(/** @type {HTMLInputElement} */ ($('rOvercut')).value);
+    const topology = /** @type {HTMLSelectElement} */ ($('rTopo')).value;
     const btn = /** @type {HTMLButtonElement} */ ($('rotaryGo'));
     btn.disabled = true;
     toast('Genero il G-code QtPlasmaC (kerf + lead-in)…', true);
     try {
-      const { model: m, gcode, name, info } = await wrapDxfToRotary(model, {
+      const { model: m, gcode, name, info } = await wrapDxfToRotary(rotarySrc, {
         diameter, length: Number.isFinite(lenRaw) ? lenRaw : undefined,
         thickness, kerf: Number.isFinite(kerf) ? kerf : undefined,
         feed: Number.isFinite(feed) ? feed : undefined,
         lead: /** @type {any} */ (lead), leadLen: Number.isFinite(leadLen) ? leadLen : undefined,
-        overcut: Number.isFinite(overcut) ? overcut : 0,
+        overcut: Number.isFinite(overcut) ? overcut : 0, topology: /** @type {any} */ (topology),
       });
       close();
       displayModel(m, name);

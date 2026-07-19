@@ -71,19 +71,41 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
   // aggiunge una riga e restituisce il suo numero (1-based)
   const push = (s) => { L.push(s); return L.length; };
   // aggiunge una riga di moto e registra il move per il sync codice↔3D
+  // (moves[].feed resta la velocità SUPERFICIE in mm/min, per stime tempo del modello)
   const motion = (code, type, u, v, ff) => {
     const line = push(code);
     moves.push({ line, type, u, v, feed: ff });
   };
-  const A = (v) => f(vToDegrees(v, tube.diameter));
+
+  // A in gradi con SHORTEST-PATH: sceglie l'equivalente più vicino al valore
+  // precedente così i moti non fanno il giro lungo attorno al tubo (né grandi
+  // riavvolgimenti vicino alla cucitura). prevA parte da 0 (home A0).
+  let prevA = 0;
+  const wrapTo180 = (d) => ((d % 360) + 540) % 360 - 180;
+  const emitA = (v) => {
+    prevA += wrapTo180(vToDegrees(v, tube.diameter) - prevA);
+    return f(prevA);
+  };
+  // Feed INVERSE-TIME (G93): F = 1/T con T = lunghezza superficie / velocità
+  // (min). Sullo svolto la lunghezza reale del segmento è hypot(du,dv) mm (u e v
+  // sono entrambi ascisse in mm sulla superficie). Così la velocità di taglio è
+  // corretta su moti assiali, di sola rotazione e misti — cosa che F in mm/min
+  // (G94) NON garantisce (su un moto di sola A verrebbe letto come gradi/min).
+  let prev = null;
+  const invF = (u, v) => {
+    if (!prev) return null;
+    const ds = Math.hypot(u - prev.u, v - prev.v);
+    return ds > 1e-6 ? feed / ds : null;   // 1/min
+  };
 
   push(`(QtPlasmaC ROTARY — generato da CAD/CAM visualLGE)`);
   push(`(tubo tondo Ø${f(tube.diameter)} mm · lunghezza ${f(tube.length)} mm · circonferenza ${f(circ)} mm)`);
   push(`(X = asse tubo mm · A = rotazione gradi · torcia fissa, THC off)`);
-  push(`(contorni: ${contours.length} · feed ${feed} mm/min · pierce ${f(pierce)} s)`);
+  push(`(feed superficie ${feed} mm/min via G93 inverse-time · pierce ${f(pierce)} s · contorni ${contours.length})`);
   push('G21');
   push('G40');
   push('G90');
+  push('G93');                           // inverse-time feed mode
   push('#<tube-cut>=1');
   if (material !== null) push(`M190 P${material}`);
 
@@ -92,13 +114,14 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
     const lead = c.lead && c.lead.length ? c.lead : null;
     const entry = lead ? lead[0] : c.pts[0];
     // posizionamento rapido al punto d'attacco (X assiale + A rotazione tubo)
-    motion(`G0 X${f(entry.u)} A${A(entry.v)}`, 'rapid', entry.u, entry.v, null);
+    motion(`G0 X${f(entry.u)} A${emitA(entry.v)}`, 'rapid', entry.u, entry.v, null);
+    prev = { u: entry.u, v: entry.v };
     push('M03 $0 S1');                   // torcia ON
     if (pierce > 0) push(`G04 P${f(pierce)}`);   // pierce delay
-    let first = true;
     const emitFeed = (p) => {
-      motion(`G1 X${f(p.u)} A${A(p.v)}${first ? ` F${feed}` : ''}`, 'feed', p.u, p.v, feed);
-      first = false;
+      const F = invF(p.u, p.v);
+      motion(`G1 X${f(p.u)} A${emitA(p.v)}${F !== null ? ` F${f(F)}` : ''}`, 'feed', p.u, p.v, feed);
+      prev = { u: p.u, v: p.v };
     };
     // lead-in (dal 2° punto: il 1° è già il rapido d'attacco)
     if (lead) for (const p of lead.slice(1)) emitFeed(p);
@@ -109,7 +132,8 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
   });
 
   push('M05 $0');
-  if (home) push('G0 X0 A0');
+  push('G94');                           // ripristina feed in unità/min
+  if (home) push(`G0 X0 A${emitA(0)}`);
   push('M30');
 
   return { text: L.join('\n') + '\n', lines: L, moves };
