@@ -9,6 +9,7 @@ import { postRotaryPlasmaC, vToDegrees, degreesToV } from '../src/generator/post
 import { generateRotaryDemo, circleUV, obroundUV, demoPattern,
   contoursFromDxfModel, wrapDxfToRotary, dxfDesignExtent } from '../src/generator/tubeWrap.js';
 import { parseDXF } from '../src/loaders/dxf/parser.js';
+import { applyKerfAndLeads, containmentDepthUV, cutParamsFor, MILD_STEEL_PLASMA } from '../src/generator/rotaryCut.js';
 
 const near = (a, b, tol = 1e-6) => assert.ok(Math.abs(a - b) <= tol, `atteso ${b}, ottenuto ${a} (tol ${tol})`);
 
@@ -123,24 +124,67 @@ test('dxfDesignExtent: Ø suggerito = altezza disegno / π', () => {
   assert.ok(Math.PI * e.suggestedDiameter >= e.vSpan, 'la circonferenza copre l\'altezza');
 });
 
-test('wrapDxfToRotary: DXF → QtPlasmaC + modello avvolto (Ø = un giro)', () => {
+test('wrapDxfToRotary: DXF → QtPlasmaC + modello avvolto (Ø = un giro) + kerf/preset', async () => {
   const m0 = dxfModel();
   const D = dxfDesignExtent(m0).suggestedDiameter;
-  const { model, gcode, name, tube, info } = wrapDxfToRotary(m0, { diameter: D });
+  const { model, gcode, name, tube, info } = await wrapDxfToRotary(m0, { diameter: D, thickness: 4 });
   assert.ok(name.endsWith('.ngc') && name.includes('rotary'));
   assert.equal(tube.diameter, D);
   assert.ok(gcode.includes('#<tube-cut>=1') && /^M03 \$0 S1$/m.test(gcode));
   assert.ok(model.segments.length > 20 && model.mesh.indices.length > 0);
   assert.equal(model.meta.unrollAvailable, true);
-  assert.ok(typeof info === 'string' && info.includes('contorni'));
-  // con Ø = altezza/π il disegno sta in ~un giro: nessun avviso di sovrapposizione
+  assert.ok(info.includes('kerf 1.4 mm') && info.includes('feed 4220'), info);   // preset Hypertherm acciaio 4 mm
+  assert.ok(gcode.includes('G04 P0.1'), 'pierce dal preset (4 mm → 0.1 s)');
   assert.ok(!info.includes('sovrappone'), info);
-  // ogni punto giace sulla superficie del tubo
   const R = D / 2;
   for (const s of model.segments) for (const p of s.pts) near(Math.hypot(p.y, p.z), R, 1e-6);
 });
 
-test('wrapDxfToRotary: senza contorni chiusi → errore chiaro', () => {
+test('wrapDxfToRotary: senza contorni chiusi → errore chiaro', async () => {
   const empty = { name: 'x.dxf', segments: [], meta: { dialect: 'DXF' } };
-  assert.throws(() => wrapDxfToRotary(empty, { diameter: 50 }), /contorno CHIUSO/);
+  await assert.rejects(() => wrapDxfToRotary(empty, { diameter: 50 }), /contorno CHIUSO/);
+});
+
+// --- kerf compensation + lead-in (rotaryCut) ---
+const sqUV = (s, cu = 0, cv = 0) => [
+  { u: cu - s / 2, v: cv - s / 2 }, { u: cu + s / 2, v: cv - s / 2 },
+  { u: cu + s / 2, v: cv + s / 2 }, { u: cu - s / 2, v: cv + s / 2 },
+  { u: cu - s / 2, v: cv - s / 2 },
+];
+
+test('containmentDepthUV: foro dentro il perimetro', () => {
+  const outer = { pts: sqUV(100) };
+  const hole = { pts: sqUV(20) };
+  const d = containmentDepthUV([outer, hole]);
+  assert.equal(d[0], 0);           // esterno
+  assert.equal(d[1], 1);           // foro
+});
+
+test('applyKerfAndLeads: esterno cresce, foro rimpicciolisce di kerf/2', async () => {
+  const kerf = 2;
+  const outer = { pts: sqUV(100), tag: 'perimetro' };
+  const hole = { pts: sqUV(20), tag: 'foro' };
+  const { contours, holes } = await applyKerfAndLeads([outer, hole], { kerf, lead: 'none' });
+  assert.equal(holes, 1);
+  const span = (pts, k) => Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k]));
+  // il perimetro (100) offset +kerf/2 → ~102 ; il foro (20) offset −kerf/2 → ~18
+  near(span(contours[0].pts, 'u'), 102, 0.2);
+  near(span(contours[1].pts, 'u'), 18, 0.2);
+});
+
+test('applyKerfAndLeads: lead-in termina esattamente su pts[0], dal lato sfrido', async () => {
+  const hole = { pts: sqUV(30, 0, 0) };
+  const { contours } = await applyKerfAndLeads([hole], { kerf: 0, lead: 'line', leadLen: 4 });
+  const c = contours[0];
+  assert.ok(c.lead.length >= 2);
+  near(c.lead[c.lead.length - 1].u, c.pts[0].u, 1e-9);   // finisce su pts[0]
+  near(c.lead[c.lead.length - 1].v, c.pts[0].v, 1e-9);
+});
+
+test('applyKerfAndLeads: foro più piccolo del kerf viene saltato', async () => {
+  const tiny = { pts: sqUV(1) };            // 1 mm con kerf 2 → collassa
+  const outer = { pts: sqUV(50) };
+  const { contours, skipped } = await applyKerfAndLeads([outer, tiny], { kerf: 2, lead: 'none' });
+  assert.equal(skipped, 1);
+  assert.equal(contours.length, 1);
 });

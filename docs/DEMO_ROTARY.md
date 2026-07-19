@@ -112,9 +112,26 @@ in un giro (`Ø = altezza/π`), avvolge e genera il G-code QtPlasmaC.
   + cerchi/ellissi); `dxfDesignExtent()` suggerisce il Ø; `wrapDxfToRotary()` fa il wrap.
 - Risponde al caso reale del thread (santy: *"cut letters above a tube"*).
 
+## CAM plasma reale: kerf + lead-in/out + preset materiale  ✅
+Il DXF→rotary ora è un CAM plasma vero (`src/generator/rotaryCut.js`), col **pannello
+parametri tubo** (`#rotaryDlg`):
+- **Kerf compensation** (Clipper `offsetClosed`): perimetro esterno `+kerf/2`, fori
+  `−kerf/2` — il finito resta in quota. Fori più piccoli del kerf vengono segnalati e saltati.
+- **Direzione di taglio** convenzione Hypertherm (swirl orario): esterni **orari (G02)**,
+  fori **antiorari (G03)** → bordo squadrato sul pezzo, bava sullo sfrido.
+- **Lead-in ad arco** tangente dal **lato sfrido** (fori dentro, perimetro fuori), con
+  fallback lineare; **overcut** (overburn) solo sui fori per chiuderli puliti (default
+  QtPlasmaC `#<oclength>` = 4 mm).
+- **Preset materiale/spessore** con **dati reali Hypertherm Powermax SYNC** (doc 810500MU
+  R4, aria): kerf/feed/pierce per acciaio dolce 1–10 mm (`MILD_STEEL_PLASMA`).
+- **Containment robusto** (centroide + guard sull'area) per casi annidati/concentrici/inscritti.
+
+Esempi DXF reali per il test in `samples/dxf/real/` (MIT, repo jscad/sample-files):
+`squareandcircle.dxf` (piastra + foro, mostra il kerf), `heart.dxf`, `texts.dxf`.
+
 ## Limiti attuali / prossimi passi
 - Solo tubo **tondo** (il rettangolare esiste nel motore svolto, non ancora esposto qui).
 - Rotary **semplice** (torcia fissa, no Z/THC). Estensione: post "torcia che segue".
-- Lead-in corto verso lo sfrido; nessuna compensazione **kerf** (roadmap).
-- DXF: solo contorni **chiusi**; pannello parametri tubo (oggi Ø via prompt) da rifinire.
-- Prossimo: feature da **STEP**, tubo rettangolare, kerf/lead-in configurabili.
+- Kerf/lead-in sul piano svolto (valido per Ø ragionevoli); niente G41/G42 (compensato dal CAM).
+- DXF: solo contorni **chiusi**; testo/MTEXT e spline a scala minuscola non ancora avvolgibili.
+- Prossimo: feature da **STEP**, tubo **rettangolare**, materiali oltre l'acciaio dolce, THC/post "torcia che segue".

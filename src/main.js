@@ -20,6 +20,7 @@ import { foldMeshFromCenterline } from './sim/tubebend.js';  // PIEGATURA tubo: 
 import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pezzo 3D: mesh → percorso raster
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
+import { MILD_STEEL_PLASMA, cutParamsFor } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per spessore
 import { MATERIALS, DEFAULT_MATERIAL, materialById, coatingColor } from './sim/materials.js';   // materiali + punta per materiale
 import { LaserTubeSim, outwardNormalAt } from './sim/lasertube.js';   // taglio LASER tubo (troncatura=stacco assiale)
 import { loadLaserHead, placeHead, placeHeadOriented, headScaleFor } from './sim/laserhead.js';
@@ -616,33 +617,74 @@ $('btnDemoRotary').addEventListener('click', () => {
   }
 });
 
-// DXF → Tubo rotary: avvolge il disegno DXF corrente su un tubo (X=asse tubo,
-// Y=circonferenza) e genera il G-code QtPlasmaC. Il Ø di default fa stare il
-// disegno in un giro; l'utente può cambiarlo.
-$('btnDxfRotary').addEventListener('click', () => {
-  if (!model || !isDxf2d(model)) return;
-  try {
+// DXF → Tubo rotary: apre il pannello parametri (Ø, lunghezza, materiale/spessore
+// → preset kerf/feed/pierce, lead-in). Genera il G-code QtPlasmaC con kerf
+// compensation + lead-in/out e avvolge il disegno sul tubo per la simulazione.
+(function initRotaryDlg() {
+  const dlg = $('rotaryDlg');
+  const mat = /** @type {HTMLSelectElement} */ ($('rMat'));
+  // popola i materiali/spessori dal preset plasma
+  mat.innerHTML = MILD_STEEL_PLASMA.map((p) => `<option value="${p.t}">Acciaio dolce ${p.t} mm (${p.amps}A)</option>`).join('');
+  const applyPreset = () => {
+    const p = cutParamsFor(parseFloat(mat.value));
+    /** @type {HTMLInputElement} */ ($('rKerf')).value = String(p.kerf);
+    /** @type {HTMLInputElement} */ ($('rFeed')).value = String(p.feed);
+  };
+  mat.addEventListener('change', applyPreset);
+  const close = () => { dlg.hidden = true; };
+  $('rotaryCancel').addEventListener('click', close);
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+
+  $('btnDxfRotary').addEventListener('click', () => {
+    if (!model || !isDxf2d(model)) return;
     const ext = dxfDesignExtent(model);
     if (!ext.contours) { toast('Nessun contorno chiuso nel DXF: servono profili chiusi da tagliare'); return; }
-    const def = ext.suggestedDiameter || 60;
-    const ans = window.prompt(
-      `Avvolgi il DXF su un tubo.\nDisegno: ${ext.uSpan.toFixed(0)} mm (asse) × ${ext.vSpan.toFixed(0)} mm (circonferenza), ${ext.contours} contorni.\n\nDiametro tubo (mm)? [${def} = un giro esatto]`,
-      String(def));
-    if (ans === null) return;
-    const diameter = parseFloat(ans);
+    $('rotaryInfo').textContent =
+      `Disegno: ${ext.uSpan.toFixed(0)} mm (asse tubo) × ${ext.vSpan.toFixed(0)} mm (circonferenza) · ${ext.contours} contorni. `
+      + `Ø ${ext.suggestedDiameter} mm = un giro esatto.`;
+    /** @type {HTMLInputElement} */ ($('rDia')).value = String(ext.suggestedDiameter || 60);
+    /** @type {HTMLInputElement} */ ($('rLen')).value = '';
+    mat.value = String(2);
+    applyPreset();
+    dlg.hidden = false;
+  });
+
+  $('rotaryGo').addEventListener('click', async () => {
+    const diameter = parseFloat(/** @type {HTMLInputElement} */ ($('rDia')).value);
     if (!(diameter > 0)) { toast('Diametro non valido'); return; }
-    const { model: m, gcode, name, info } = wrapDxfToRotary(model, { diameter });
-    displayModel(m, name);
-    lastGen = { name, text: gcode };
-    lastStep = null;
-    $('btnGenNc').hidden = true;
-    $('btnDlNc').hidden = false;
-    toast(`DXF avvolto su tubo: ${info} — ▶ per simulare, ⬇ NC per scaricarlo`, true);
-  } catch (err) {
-    console.error(err);
-    toast(`Wrap DXF→rotary fallito: ${/** @type {Error} */(err).message}`);
-  }
-});
+    const lenRaw = parseFloat(/** @type {HTMLInputElement} */ ($('rLen')).value);
+    const thickness = parseFloat(mat.value);
+    const kerf = parseFloat(/** @type {HTMLInputElement} */ ($('rKerf')).value);
+    const feed = parseFloat(/** @type {HTMLInputElement} */ ($('rFeed')).value);
+    const lead = /** @type {HTMLSelectElement} */ ($('rLead')).value;
+    const leadLen = parseFloat(/** @type {HTMLInputElement} */ ($('rLeadLen')).value);
+    const overcut = parseFloat(/** @type {HTMLInputElement} */ ($('rOvercut')).value);
+    const btn = /** @type {HTMLButtonElement} */ ($('rotaryGo'));
+    btn.disabled = true;
+    toast('Genero il G-code QtPlasmaC (kerf + lead-in)…', true);
+    try {
+      const { model: m, gcode, name, info } = await wrapDxfToRotary(model, {
+        diameter, length: Number.isFinite(lenRaw) ? lenRaw : undefined,
+        thickness, kerf: Number.isFinite(kerf) ? kerf : undefined,
+        feed: Number.isFinite(feed) ? feed : undefined,
+        lead: /** @type {any} */ (lead), leadLen: Number.isFinite(leadLen) ? leadLen : undefined,
+        overcut: Number.isFinite(overcut) ? overcut : 0,
+      });
+      close();
+      displayModel(m, name);
+      lastGen = { name, text: gcode };
+      lastStep = null;
+      $('btnGenNc').hidden = true;
+      $('btnDlNc').hidden = false;
+      toast(`DXF avvolto su tubo: ${info} — ▶ per simulare, ⬇ NC per scaricarlo`, true);
+    } catch (err) {
+      console.error(err);
+      toast(`Wrap DXF→rotary fallito: ${/** @type {Error} */(err).message}`);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+})();
 $('btnFit').addEventListener('click', () => viewer.fit());
 $('btnStock').addEventListener('click', () => setStockMode(!stockOn));
 
