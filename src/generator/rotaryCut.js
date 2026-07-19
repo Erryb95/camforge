@@ -61,13 +61,43 @@ export const ALUMINUM_PLASMA = [
 ];
 
 /**
- * Materiali plasma disponibili (mappa alloy → tabella spessori). Dati reali dai
- * cut chart Hypertherm Powermax SYNC (doc 810500MU R4, aria).
+ * ACCIAIO DOLCE FineCut (lamiere sottili, aria, cartuccia 428926) — Hypertherm
+ * SYNC, colonna High Speed. Kerf più stretto e finitura migliore fino a ~4 mm.
+ * @type {typeof MILD_STEEL_PLASMA}
+ */
+export const MILD_STEEL_FINECUT = [
+  { t: 0.5, kerf: 0.7, feed: 8900, pierce: 0, amps: 40, volts: 64 },
+  { t: 0.8, kerf: 0.5, feed: 8900, pierce: 0, amps: 40, volts: 65 },
+  { t: 1, kerf: 0.4, feed: 8890, pierce: 0.1, amps: 40, volts: 64 },
+  { t: 1.5, kerf: 0.4, feed: 6320, pierce: 0.3, amps: 45, volts: 64 },
+  { t: 2, kerf: 0.4, feed: 4830, pierce: 0.4, amps: 45, volts: 65 },
+  { t: 3, kerf: 0.6, feed: 2550, pierce: 0.5, amps: 45, volts: 71 },
+  { t: 4, kerf: 0.5, feed: 1050, pierce: 0.7, amps: 45, volts: 71 },
+];
+
+/**
+ * INOX 304 con gas F5 (95% N2 / 5% H2) — Hypertherm SYNC 65A. Kerf più stretto e
+ * bordo migliore dell'aria su inox spesso (4–12 mm).
+ * @type {typeof MILD_STEEL_PLASMA}
+ */
+export const STAINLESS_F5_PLASMA = [
+  { t: 4, kerf: 0.8, feed: 3200, pierce: 0.1, amps: 65, volts: 142 },
+  { t: 6, kerf: 1.0, feed: 1800, pierce: 0.2, amps: 65, volts: 144 },
+  { t: 8, kerf: 1.1, feed: 1100, pierce: 0.5, amps: 65, volts: 148 },
+  { t: 10, kerf: 1.3, feed: 700, pierce: 0.7, amps: 65, volts: 153 },
+  { t: 12, kerf: 1.5, feed: 500, pierce: 1.2, amps: 65, volts: 157 },
+];
+
+/**
+ * Materiali plasma disponibili (mappa → tabella spessori). Dati reali dai cut
+ * chart Hypertherm Powermax SYNC (doc 810500MU R4). Il gas è indicato nel nome.
  * @type {Record<string, {key:string, label:string, gas:string, entries:typeof MILD_STEEL_PLASMA}>}
  */
 export const PLASMA_MATERIALS = {
   mild_steel: { key: 'mild_steel', label: 'Acciaio dolce', gas: 'aria', entries: MILD_STEEL_PLASMA },
+  mild_steel_finecut: { key: 'mild_steel_finecut', label: 'Acciaio dolce FineCut', gas: 'aria', entries: MILD_STEEL_FINECUT },
   stainless: { key: 'stainless', label: 'Inox 304', gas: 'aria', entries: STAINLESS_PLASMA },
+  stainless_f5: { key: 'stainless_f5', label: 'Inox 304 (F5, spessi)', gas: 'F5 (95%N2/5%H2)', entries: STAINLESS_F5_PLASMA },
   aluminum: { key: 'aluminum', label: 'Alluminio', gas: 'aria', entries: ALUMINUM_PLASMA },
 };
 

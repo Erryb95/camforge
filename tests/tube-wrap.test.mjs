@@ -9,6 +9,7 @@ import { postRotaryPlasmaC, vToDegrees, degreesToV } from '../src/generator/post
 import { generateRotaryDemo, circleUV, obroundUV, demoPattern,
   contoursFromDxfModel, wrapDxfToRotary, dxfDesignExtent } from '../src/generator/tubeWrap.js';
 import { parseDXF } from '../src/loaders/dxf/parser.js';
+import { tubePerimeter, tubeSectionAt, tubeRadialAt } from '../src/generator/tubeGeom.js';
 import { applyKerfAndLeads, containmentDepthUV, cutParamsFor, MILD_STEEL_PLASMA } from '../src/generator/rotaryCut.js';
 import { materialFileForAlloy, presetToMaterial, qtplasmacMaterialFile } from '../src/generator/plasmacMaterial.js';
 
@@ -186,6 +187,43 @@ test('wrapDxfToRotary: DXF → QtPlasmaC + modello avvolto (Ø = un giro) + kerf
 test('wrapDxfToRotary: senza contorni chiusi → errore chiaro', async () => {
   const empty = { name: 'x.dxf', segments: [], meta: { dialect: 'DXF' } };
   await assert.rejects(() => wrapDxfToRotary(empty, { diameter: 50 }), /contorno CHIUSO/);
+});
+
+// --- geometria tubo tondo / rettangolare (tubeGeom) ---
+test('tubeGeom: perimetro, sezione e raggio (tondo e rettangolare)', () => {
+  const round = { shape: 'round', diameter: 60, length: 100 };
+  const rect = { shape: 'rect', width: 40, height: 30, length: 100 };
+  near(tubePerimeter(round), Math.PI * 60, 1e-6);
+  near(tubePerimeter(rect), 140, 1e-9);                 // 2(40+30)
+  // v=0 → centro faccia superiore
+  const r0 = tubeSectionAt(0, rect); near(r0.y, 0, 1e-9); near(r0.z, 15, 1e-9);
+  const c0 = tubeSectionAt(0, round); near(c0.y, 0, 1e-9); near(c0.z, 30, 1e-9);
+  // raggio: costante sul tondo, variabile sul rettangolo (spigolo 20,15 → 25)
+  near(tubeRadialAt(0, round), 30, 1e-6);
+  near(tubeRadialAt(50, round), 30, 1e-6);
+  near(tubeRadialAt(0, rect), 15, 1e-9);                // centro faccia sup.
+  near(tubeRadialAt(20, rect), 25, 1e-9);               // spigolo (v=20 = a=20)
+});
+
+test('wrapDxfToRotary: tubo RETTANGOLARE + torcia che segue (Z)', async () => {
+  const m0 = dxfModel();
+  const { model, gcode, tube, info } = await wrapDxfToRotary(m0, { shape: 'rect', width: 200, height: 150, thickness: 3, follow: true });
+  assert.equal(tube.shape, 'rect');
+  assert.ok(info.includes('tubo rett. 200×150') && info.includes('torcia segue'));
+  assert.ok(model.mesh.indices.length > 0);
+  // ogni punto giace sull'outline del rettangolo (|y|≤w/2 e |z|≤h/2, con uguaglianza su un lato)
+  for (const s of model.segments) for (const p of s.pts) {
+    assert.ok(Math.abs(p.y) <= 100 + 1e-6 && Math.abs(p.z) <= 75 + 1e-6, `punto fuori sezione: ${p.y},${p.z}`);
+  }
+  // il G-code ha la Z (standoff) sui moti di taglio, e varia (spigolo vs faccia)
+  const zs = [...gcode.matchAll(/^G1 .* Z(-?[\d.]+)/gm)].map((x) => +x[1]);
+  assert.ok(zs.length > 5, 'moti con Z presenti');
+  assert.ok(Math.max(...zs) - Math.min(...zs) > 1, 'Z varia sul rettangolare');
+});
+
+test('wrapDxfToRotary: tondo senza follow → nessuna Z', async () => {
+  const { gcode } = await wrapDxfToRotary(dxfModel(), { diameter: 60, thickness: 3 });
+  assert.ok(!/^G1 .* Z/m.test(gcode));
 });
 
 // --- kerf compensation + lead-in (rotaryCut) ---

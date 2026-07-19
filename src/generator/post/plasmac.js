@@ -18,16 +18,19 @@
 // scelta legittima e più semplice/robusta per la demo di validazione.
 
 import { pierceSeconds } from './gcode.js';
+import { tubePerimeter, tubeRadialAt } from '../tubeGeom.js';
 
 /**
  * @typedef {{u:number, v:number}} UV
  * @typedef {{pts:UV[], lead?:UV[], tag?:string}} RotaryContour
- * @typedef {{diameter:number, length:number}} TubeSpec  tondo: Ø e lunghezza (mm)
+ * @typedef {import('../tubeGeom.js').TubeShape} TubeSpec  tondo (Ø) o rettangolare (w×h)
  * @typedef {{
  *   feed?:number,        // mm/min lungo la superficie
  *   thickness?:number,   // mm parete, per il pierce delay
  *   pierceMs?:number,    // override delay in ms
  *   material?:number|null,// M190 P<n> (null = ometti)
+ *   follow?:boolean,     // torcia che segue: emette Z = raggio + cutHeight (necessario sul rettangolare)
+ *   cutHeight?:number,   // standoff di taglio (mm) per il modo follow
  *   name?:string,
  *   home?:boolean,       // ritorno a X0 A0 a fine programma (default true)
  * }} RotaryPostOpts
@@ -64,7 +67,14 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
   const pierce = pierceSeconds(opts.thickness ?? 2, opts.pierceMs);
   const material = opts.material === undefined ? 0 : opts.material;
   const home = opts.home !== false;
-  const circ = Math.PI * tube.diameter;
+  const perimeter = tubePerimeter(tube);
+  const follow = !!opts.follow;
+  const cutHeight = opts.cutHeight ?? 1.5;
+  // Z (solo modo follow): la torcia segue la superficie a standoff costante ⇒
+  // Z = distanza radiale del punto + cutHeight. Costante sul tondo, VARIABILE sul
+  // rettangolare (indispensabile lì). La torcia resta sempre sopra la superficie,
+  // quindi anche i rapidi restano collision-safe (i tagli sono fori nel tubo).
+  const zAt = (v) => f(tubeRadialAt(v, tube) + cutHeight);
 
   /** @type {string[]} */ const L = [];
   /** @type {RotaryMove[]} */ const moves = [];
@@ -82,10 +92,12 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
   // riavvolgimenti vicino alla cucitura). prevA parte da 0 (home A0).
   let prevA = 0;
   const wrapTo180 = (d) => ((d % 360) + 540) % 360 - 180;
+  const vDeg = (v) => (perimeter > 0 ? (v / perimeter) * 360 : 0);   // tondo o rett.
   const emitA = (v) => {
-    prevA += wrapTo180(vToDegrees(v, tube.diameter) - prevA);
+    prevA += wrapTo180(vDeg(v) - prevA);
     return f(prevA);
   };
+  const zWord = (v) => (follow ? ` Z${zAt(v)}` : '');
   // Feed INVERSE-TIME (G93): F = 1/T con T = lunghezza superficie / velocità
   // (min). Sullo svolto la lunghezza reale del segmento è hypot(du,dv) mm (u e v
   // sono entrambi ascisse in mm sulla superficie). Così la velocità di taglio è
@@ -98,9 +110,12 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
     return ds > 1e-6 ? feed / ds : null;   // 1/min
   };
 
+  const shapeDesc = tube.shape === 'rect'
+    ? `tubo rett. ${f(tube.width || 0)}×${f(tube.height || 0)} mm`
+    : `tubo tondo Ø${f(tube.diameter || 0)} mm`;
   push(`(QtPlasmaC ROTARY — generato da CAD/CAM visualLGE)`);
-  push(`(tubo tondo Ø${f(tube.diameter)} mm · lunghezza ${f(tube.length)} mm · circonferenza ${f(circ)} mm)`);
-  push(`(X = asse tubo mm · A = rotazione gradi · torcia fissa, THC off)`);
+  push(`(${shapeDesc} · lunghezza ${f(tube.length)} mm · perimetro ${f(perimeter)} mm)`);
+  push(`(X = asse tubo mm · A = rotazione gradi${follow ? ' · Z = standoff torcia che segue' : ' · torcia fissa, THC off'})`);
   push(`(feed superficie ${feed} mm/min via G93 inverse-time · pierce ${f(pierce)} s · contorni ${contours.length})`);
   push('G21');
   push('G40');
@@ -113,14 +128,14 @@ export function postRotaryPlasmaC(contours, tube, opts = {}) {
     push(`(contorno ${i + 1}/${contours.length}${c.tag ? ' ' + c.tag : ''})`);
     const lead = c.lead && c.lead.length ? c.lead : null;
     const entry = lead ? lead[0] : c.pts[0];
-    // posizionamento rapido al punto d'attacco (X assiale + A rotazione tubo)
-    motion(`G0 X${f(entry.u)} A${emitA(entry.v)}`, 'rapid', entry.u, entry.v, null);
+    // posizionamento rapido al punto d'attacco (X assiale + A rotazione tubo [+ Z])
+    motion(`G0 X${f(entry.u)} A${emitA(entry.v)}${zWord(entry.v)}`, 'rapid', entry.u, entry.v, null);
     prev = { u: entry.u, v: entry.v };
     push('M03 $0 S1');                   // torcia ON
     if (pierce > 0) push(`G04 P${f(pierce)}`);   // pierce delay
     const emitFeed = (p) => {
       const F = invF(p.u, p.v);
-      motion(`G1 X${f(p.u)} A${emitA(p.v)}${F !== null ? ` F${f(F)}` : ''}`, 'feed', p.u, p.v, feed);
+      motion(`G1 X${f(p.u)} A${emitA(p.v)}${zWord(p.v)}${F !== null ? ` F${f(F)}` : ''}`, 'feed', p.u, p.v, feed);
       prev = { u: p.u, v: p.v };
     };
     // lead-in (dal 2° punto: il 1° è già il rapido d'attacco)

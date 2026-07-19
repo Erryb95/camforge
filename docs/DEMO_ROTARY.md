@@ -142,9 +142,22 @@ parametri tubo** (`#rotaryDlg`):
 Esempi DXF reali per il test in `samples/dxf/real/` (MIT, repo jscad/sample-files):
 `squareandcircle.dxf` (piastra + foro, mostra il kerf), `heart.dxf`, `texts.dxf`.
 
+## Tubo RETTANGOLARE + torcia che segue (Z)  ✅
+Oltre al tondo, il wrap gestisce il **tubo rettangolare** (`src/generator/tubeGeom.js`:
+perimetro `2(w+h)`, punto sezione sull'outline, distanza radiale). Poiché su un rett il
+raggio varia (spigolo più lontano del centro faccia), è disponibile il **post "torcia che
+segue"**: emette `Z = raggio + cut height` per mantenere lo standoff — costante sul tondo,
+**variabile sul rettangolare** (necessario). Selettore forma (Tondo Ø / Rett L×H) + spunta
+"torcia che segue" nel pannello.
+
+## Materiali (5) con dati reali Hypertherm
+Acciaio dolce · Acciaio dolce **FineCut** (lamiere sottili) · Inox 304 · Inox 304 **F5**
+(95%N2/5%H2, spessi) · Alluminio — kerf/feed/pierce/arc-volts per spessore, ed **export
+material file QtPlasmaC** per ognuno.
+
 ## Limiti attuali / prossimi passi
-- Solo tubo **tondo** (il rettangolare esiste nel motore svolto, non ancora esposto qui).
-- Rotary **semplice** (torcia fissa, no Z/THC). Estensione: post "torcia che segue".
+- Rett: A continua (non indicizzata a 90°); la torcia segue lo standoff ma non ruota per
+  restare perpendicolare alle facce (limite del modello a torcia fissa+Z).
 - Kerf/lead-in sul piano svolto (valido per Ø ragionevoli); niente G41/G42 (compensato dal CAM).
 - DXF: solo contorni **chiusi**; testo/MTEXT e spline a scala minuscola non ancora avvolgibili.
-- Prossimo: feature da **STEP**, tubo **rettangolare**, materiali oltre l'acciaio dolce, THC/post "torcia che segue".
+- Prossimo: feature da **STEP**, gas/pressione nel material file, indicizzazione 90° per rett.

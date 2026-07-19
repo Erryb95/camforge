@@ -17,6 +17,7 @@ import { buildTubeMesh } from '../loaders/cad/tube3d.js';
 import { postRotaryPlasmaC } from './post/plasmac.js';
 import { closedRingsFromDxf } from './dxfmill.js';
 import { applyKerfAndLeads, cutParamsFor, materialEntries } from './rotaryCut.js';
+import { tubePerimeter, tubeSectionAt } from './tubeGeom.js';
 
 /**
  * @typedef {import('./post/plasmac.js').UV} UV
@@ -24,10 +25,17 @@ import { applyKerfAndLeads, cutParamsFor, materialEntries } from './rotaryCut.js
  * @typedef {import('./post/plasmac.js').TubeSpec} TubeSpec
  */
 
-/** Punto sulla superficie del tubo tondo: v=0 al centro faccia superiore (+Z). */
-function uvToXyz(u, v, R) {
-  const phi = v / R;                      // angolo dalla sommità verso +Y
-  return { x: u, y: R * Math.sin(phi), z: R * Math.cos(phi) };
+/** Punto 3D sulla superficie del tubo per (u = asse, v = perimetro). @param {import('./tubeGeom.js').TubeShape} tube */
+function uvToXyz(u, v, tube) {
+  const p = tubeSectionAt(v, tube);
+  return { x: u, y: p.y, z: p.z };
+}
+
+/** Profilo per la mesh/meta (profileFromMeta): tondo o rettangolare. @param {TubeShape} tube */
+function tubeMeta(tube) {
+  return (tube.shape === 'rect')
+    ? { dialect: 'QTPLASMAC', tubeWidth: tube.width, tubeHeight: tube.height, tubeLength: tube.length }
+    : { dialect: 'QTPLASMAC', tubeDiameter: tube.diameter, tubeLength: tube.length };
 }
 
 /**
@@ -38,11 +46,8 @@ function uvToXyz(u, v, R) {
  * @param {string} name
  */
 function buildWrappedModel(moves, tube, rawLines, name) {
-  const R = tube.diameter / 2;
-  const meta = /** @type {Record<string, any>} */ ({
-    dialect: 'QTPLASMAC', tubeDiameter: tube.diameter, tubeLength: tube.length,
-  });
-  const profile = profileFromMeta(meta);   // {type:'round', r, per}
+  const meta = /** @type {Record<string, any>} */ (tubeMeta(tube));
+  const profile = profileFromMeta(meta);   // {type:'round'|'rect', ...}
   if (!profile) throw new Error('profilo tubo non valido');
 
   /** @type {import('../core/model.js').Segment[]} */
@@ -61,7 +66,7 @@ function buildWrappedModel(moves, tube, rawLines, name) {
       for (let i = 0; i <= n; i++) {
         const t = i / n;
         const u = prev.u + du * t, v = prev.v + dv * t;
-        pts.push(uvToXyz(u, v, R));
+        pts.push(uvToXyz(u, v, tube));
         uv.push({ u, v });
         if (u < uMin) uMin = u;
         if (u > uMax) uMax = u;
@@ -210,8 +215,8 @@ const centroidUV = (pts) => {
  * Helper CONDIVISO: contorni (u,v) → G-code QtPlasmaC + modello avvolto.
  * Aggiunge un lead-in verso il centroide dove manca.
  * @param {RotaryContour[]} contours
- * @param {TubeSpec} tube
- * @param {{feed?:number, thickness?:number, pierceMs?:number, material?:number|null, name?:string, leadIn?:number}} [opts]
+ * @param {import('./tubeGeom.js').TubeShape} tube
+ * @param {{feed?:number, thickness?:number, pierceMs?:number, material?:number|null, follow?:boolean, cutHeight?:number, name?:string, leadIn?:number}} [opts]
  */
 export function wrapContoursToRotary(contours, tube, opts = {}) {
   const leadIn = opts.leadIn ?? 0;
@@ -225,9 +230,12 @@ export function wrapContoursToRotary(contours, tube, opts = {}) {
     thickness: opts.thickness ?? 2,
     pierceMs: opts.pierceMs,
     material: opts.material ?? 0,
+    follow: opts.follow,
+    cutHeight: opts.cutHeight,
     name: opts.name,
   });
-  const name = opts.name || `rotary-O${tube.diameter}x${Math.round(tube.length)}.ngc`;
+  const size = tube.shape === 'rect' ? `${Math.round(tube.width || 0)}x${Math.round(tube.height || 0)}` : `O${tube.diameter}`;
+  const name = opts.name || `rotary-${size}x${Math.round(tube.length)}.ngc`;
   const model = buildWrappedModel(post.moves, tube, post.lines, name);
   return { model, gcode: post.text, name, tube };
 }
@@ -239,8 +247,8 @@ export function wrapContoursToRotary(contours, tube, opts = {}) {
  * @returns {{model:import('../core/model.js').SceneModel, gcode:string, name:string, tube:TubeSpec}}
  */
 export function generateRotaryDemo(opts = {}) {
-  const tube = { diameter: opts.diameter ?? 60, length: opts.length ?? 300 };
-  const contours = demoPattern(tube);
+  const tube = { shape: 'round', diameter: opts.diameter ?? 60, length: opts.length ?? 300 };
+  const contours = demoPattern({ diameter: tube.diameter, length: tube.length });
   return wrapContoursToRotary(contours, tube, {
     feed: opts.feed, thickness: opts.thickness, material: opts.material,
     name: opts.name || `rotary-demo-O${tube.diameter}x${tube.length}.ngc`,
@@ -317,11 +325,11 @@ export function dxfDesignExtent(model) {
  * Applica kerf compensation (± kerf/2 secondo il contenimento) + lead-in/out.
  * feed/kerf/pierce di default vengono dal preset plasma per lo spessore.
  * @param {import('../core/model.js').SceneModel} dxfModel
- * @param {Partial<TubeSpec> & {feed?:number, thickness?:number, materialKey?:string, kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number, topology?:'auto'|'tube'|'sheet', material?:number|null, name?:string, leadIn?:number, margin?:number}} opts
- * @returns {Promise<{model:import('../core/model.js').SceneModel, gcode:string, name:string, tube:TubeSpec, info:string}>}
+ * @param {{shape?:'round'|'rect', diameter?:number, width?:number, height?:number, length?:number, feed?:number, thickness?:number, materialKey?:string, kerf?:number, lead?:'arc'|'line'|'none', leadLen?:number, overcut?:number, topology?:'auto'|'tube'|'sheet', follow?:boolean, cutHeight?:number, material?:number|null, name?:string, leadIn?:number, margin?:number}} opts
+ * @returns {Promise<{model:import('../core/model.js').SceneModel, gcode:string, name:string, tube:import('./tubeGeom.js').TubeShape, info:string}>}
  */
 export async function wrapDxfToRotary(dxfModel, opts = {}) {
-  const diameter = opts.diameter ?? 60;
+  const shape = opts.shape || 'round';
   const contours = contoursFromDxfModel(dxfModel);
   if (!contours.length) throw new Error('nessun contorno CHIUSO nel DXF (servono profili chiusi da tagliare)');
   // bounding box del disegno in (u,v)
@@ -338,7 +346,10 @@ export async function wrapDxfToRotary(dxfModel, opts = {}) {
     ...c, pts: c.pts.map((p) => ({ u: p.u + du, v: p.v - vMid })),
   }));
   const length = opts.length ?? (uMax - uMin + 2 * margin);
-  const tube = { diameter, length };
+  const tube = shape === 'rect'
+    ? { shape: 'rect', width: opts.width ?? 40, height: opts.height ?? 40, length }
+    : { shape: 'round', diameter: opts.diameter ?? 60, length };
+  const perim = tubePerimeter(tube);
 
   // preset di taglio dalla lega + spessore (kerf/feed/pierce), con override
   const thickness = opts.thickness ?? 2;
@@ -352,17 +363,18 @@ export async function wrapDxfToRotary(dxfModel, opts = {}) {
     overcut: opts.overcut ?? 0, topology: opts.topology ?? 'auto',
   });
 
-  const circ = Math.PI * diameter;
   const vSpan = vMax - vMin;
   const topo = cam.sheet ? 'ritaglio sagoma' : 'fori nel tubo';
-  let info = `${cam.contours.length} contorni (${cam.holes} fori · ${topo}) · disegno ${(uMax - uMin).toFixed(0)}×${vSpan.toFixed(0)} mm · tubo Ø${diameter} (circonf. ${circ.toFixed(1)} mm) · kerf ${kerf} mm · feed ${feed} mm/min`;
+  const shapeTxt = shape === 'rect' ? `tubo rett. ${tube.width}×${tube.height}` : `tubo Ø${tube.diameter}`;
+  let info = `${cam.contours.length} contorni (${cam.holes} fori · ${topo}) · disegno ${(uMax - uMin).toFixed(0)}×${vSpan.toFixed(0)} mm · ${shapeTxt} (perim. ${perim.toFixed(1)} mm) · kerf ${kerf} mm · feed ${feed} mm/min${opts.follow ? ' · torcia segue (Z)' : ''}`;
   if (cam.skipped) info += ` · ⚠ ${cam.skipped} contorni < kerf saltati`;
-  if (vSpan > circ + 0.5) info += ` · ⚠ altezza disegno > circonferenza: il taglio si sovrappone (>360°)`;
+  if (vSpan > perim + 0.5) info += ` · ⚠ altezza disegno > perimetro: il taglio si sovrappone (>360°)`;
 
-  const name = opts.name || (dxfModel.name || 'dxf').replace(/\.[^.]+$/, '') + `.rotary-O${diameter}.ngc`;
+  const size = shape === 'rect' ? `${tube.width}x${tube.height}` : `O${tube.diameter}`;
+  const name = opts.name || (dxfModel.name || 'dxf').replace(/\.[^.]+$/, '') + `.rotary-${size}.ngc`;
   const r = wrapContoursToRotary(cam.contours, tube, {
     feed, thickness, pierceMs: preset.pierce * 1000, material: opts.material,
-    name,
+    follow: opts.follow, cutHeight: opts.cutHeight, name,
   });
   return { ...r, info };
 }

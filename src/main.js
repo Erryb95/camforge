@@ -646,6 +646,18 @@ $('btnDemoRotary').addEventListener('click', () => {
   alloySel.addEventListener('change', rebuildThickness);
   mat.addEventListener('change', applyPreset);
   rebuildThickness();
+
+  // forma tubo: tondo (Ø) vs rettangolare (L×H); il rettangolare richiede la
+  // torcia che segue (Z variabile) → la spunta di default
+  const shapeSel = /** @type {HTMLSelectElement} */ ($('rShape'));
+  const syncShape = () => {
+    const rect = shapeSel.value === 'rect';
+    $('rDiaLabel').hidden = rect;
+    $('rWLabel').hidden = !rect;
+    $('rHLabel').hidden = !rect;
+    if (rect) /** @type {HTMLInputElement} */ ($('rFollow')).checked = true;
+  };
+  shapeSel.addEventListener('change', syncShape);
   const close = () => { dlg.hidden = true; };
   $('rotaryCancel').addEventListener('click', close);
   dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
@@ -676,12 +688,18 @@ $('btnDemoRotary').addEventListener('click', () => {
     /** @type {HTMLInputElement} */ ($('rLen')).value = '';
     mat.value = String(2);
     applyPreset();
+    syncShape();
     dlg.hidden = false;
   });
 
   $('rotaryGo').addEventListener('click', async () => {
+    const shape = shapeSel.value;
     const diameter = parseFloat(/** @type {HTMLInputElement} */ ($('rDia')).value);
-    if (!(diameter > 0)) { toast('Diametro non valido'); return; }
+    const width = parseFloat(/** @type {HTMLInputElement} */ ($('rW')).value);
+    const height = parseFloat(/** @type {HTMLInputElement} */ ($('rH')).value);
+    if (shape === 'round' && !(diameter > 0)) { toast('Diametro non valido'); return; }
+    if (shape === 'rect' && !(width > 0 && height > 0)) { toast('Larghezza/altezza non valide'); return; }
+    const follow = /** @type {HTMLInputElement} */ ($('rFollow')).checked;
     const lenRaw = parseFloat(/** @type {HTMLInputElement} */ ($('rLen')).value);
     const thickness = parseFloat(mat.value);
     const materialKey = alloySel.value;
@@ -696,7 +714,8 @@ $('btnDemoRotary').addEventListener('click', () => {
     toast('Genero il G-code QtPlasmaC (kerf + lead-in)…', true);
     try {
       const { model: m, gcode, name, info } = await wrapDxfToRotary(rotarySrc, {
-        diameter, length: Number.isFinite(lenRaw) ? lenRaw : undefined,
+        shape: /** @type {any} */ (shape), diameter, width, height, follow,
+        length: Number.isFinite(lenRaw) ? lenRaw : undefined,
         thickness, materialKey, kerf: Number.isFinite(kerf) ? kerf : undefined,
         feed: Number.isFinite(feed) ? feed : undefined,
         lead: /** @type {any} */ (lead), leadLen: Number.isFinite(leadLen) ? leadLen : undefined,
