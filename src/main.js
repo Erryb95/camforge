@@ -20,7 +20,8 @@ import { foldMeshFromCenterline } from './sim/tubebend.js';  // PIEGATURA tubo: 
 import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pezzo 3D: mesh → percorso raster
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
-import { MILD_STEEL_PLASMA, cutParamsFor } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per spessore
+import { MILD_STEEL_PLASMA, cutParamsFor, PLASMA_MATERIALS } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per spessore
+import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
 import { MATERIALS, DEFAULT_MATERIAL, materialById, coatingColor } from './sim/materials.js';   // materiali + punta per materiale
 import { LaserTubeSim, outwardNormalAt } from './sim/lasertube.js';   // taglio LASER tubo (troncatura=stacco assiale)
 import { loadLaserHead, placeHead, placeHeadOriented, headScaleFor } from './sim/laserhead.js';
@@ -639,6 +640,21 @@ $('btnDemoRotary').addEventListener('click', () => {
   const close = () => { dlg.hidden = true; };
   $('rotaryCancel').addEventListener('click', close);
   dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+
+  // ⬇ Material file QtPlasmaC: kerf/feed/pierce/altezze per ogni spessore del
+  // materiale, pronto da caricare nella config (M190 P<numero>). Dato di mercato:
+  // non esiste un database ufficiale, si compila a mano dai cut chart.
+  $('rotaryMat').addEventListener('click', () => {
+    const alloy = /** @type {HTMLSelectElement} */ ($('rAlloy'))?.value || 'mild_steel';
+    const { text, count, alloy: label } = materialFileForAlloy(alloy);
+    const fname = `${alloy}_material.cfg`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = fname;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(`Material file QtPlasmaC: ${count} materiali (${label}) → ${fname}`, true);
+  });
 
   $('btnDxfRotary').addEventListener('click', () => {
     if (!rotarySrc) return;

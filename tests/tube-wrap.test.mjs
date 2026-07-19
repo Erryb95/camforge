@@ -10,6 +10,7 @@ import { generateRotaryDemo, circleUV, obroundUV, demoPattern,
   contoursFromDxfModel, wrapDxfToRotary, dxfDesignExtent } from '../src/generator/tubeWrap.js';
 import { parseDXF } from '../src/loaders/dxf/parser.js';
 import { applyKerfAndLeads, containmentDepthUV, cutParamsFor, MILD_STEEL_PLASMA } from '../src/generator/rotaryCut.js';
+import { materialFileForAlloy, presetToMaterial, qtplasmacMaterialFile } from '../src/generator/plasmacMaterial.js';
 
 const near = (a, b, tol = 1e-6) => assert.ok(Math.abs(a - b) <= tol, `atteso ${b}, ottenuto ${a} (tol ${tol})`);
 
@@ -101,6 +102,32 @@ test('generateRotaryDemo: l\'asola circonferenziale avvolge (A copre >90°)', ()
     if (g) { const a = +g[1]; if (a < amin) amin = a; if (a > amax) amax = a; }
   }
   assert.ok(amax - amin > 180, `atteso wrap ampio, A span = ${(amax - amin).toFixed(1)}°`);
+});
+
+test('material file QtPlasmaC: formato + campi obbligatori + valori dal preset', () => {
+  const { text, count, materials } = materialFileForAlloy('mild_steel');
+  assert.equal(count, MILD_STEEL_PLASMA.length);
+  assert.ok(/^#plasmac material file/m.test(text));
+  // sezioni numerate consecutive
+  assert.ok(/^\[MATERIAL_NUMBER_1\]$/m.test(text) && /^\[MATERIAL_NUMBER_8\]$/m.test(text));
+  // campi obbligatori presenti
+  for (const k of ['PIERCE_HEIGHT', 'PIERCE_DELAY', 'CUT_HEIGHT', 'CUT_SPEED', 'KERF_WIDTH', 'CUT_AMPS']) {
+    assert.ok(new RegExp(`^${k}\\s+= `, 'm').test(text), `manca campo ${k}`);
+  }
+  // il materiale 4 mm riflette il preset reale (kerf 1.4, feed 4220, pierce 0.1)
+  const m4 = materials.find((m) => m.name.includes('4 mm'));
+  assert.equal(m4.kerf, 1.4);
+  assert.equal(m4.cutSpeed, 4220);
+  assert.equal(m4.pierceDelay, 0.1);
+  assert.equal(m4.pierceHeight, 3.8);       // 2.5 × cut height 1.5
+});
+
+test('presetToMaterial: numero e nome coerenti', () => {
+  const m = presetToMaterial({ t: 6, kerf: 1.5, feed: 2570, pierce: 0.2, amps: 65 }, { number: 3, alloyLabel: 'Acciaio dolce' });
+  assert.equal(m.number, 3);
+  assert.ok(m.name.includes('6 mm') && m.name.includes('65A'));
+  const txt = qtplasmacMaterialFile([m]);
+  assert.ok(txt.includes('[MATERIAL_NUMBER_3]'));
 });
 
 test('demoPattern: numero di contorni atteso (2 file fori + 2 asole)', () => {

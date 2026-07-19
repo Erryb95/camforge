@@ -16,7 +16,7 @@ import { offsetClosed } from '../loaders/cad/offset.js';
  * Preset di taglio PLASMA per ACCIAIO DOLCE (kerf/feed/pierce per spessore).
  * Valori REALI dalle cut chart Hypertherm Powermax SYNC (doc 810500MU Rev.4,
  * torce 45/65 A, aria) — kerf width, cut speed (mm/min), pierce delay (s).
- * @type {{t:number, kerf:number, feed:number, pierce:number, amps:number}[]}
+ * @type {{t:number, kerf:number, feed:number, pierce:number, amps:number, volts?:number}[]}
  */
 export const MILD_STEEL_PLASMA = [
   { t: 1, kerf: 1.4, feed: 8890, pierce: 0.1, amps: 45 },
@@ -29,7 +29,21 @@ export const MILD_STEEL_PLASMA = [
   { t: 10, kerf: 1.9, feed: 1040, pierce: 0.7, amps: 65 },
 ];
 
-/** Parametri di taglio per lo spessore più vicino nel preset. @param {number} thickness */
+/**
+ * Materiali plasma disponibili (mappa alloy → tabella spessori). Inox e alluminio
+ * vengono popolati con dati reali da cut chart produttori.
+ * @type {Record<string, {key:string, label:string, gas:string, entries:typeof MILD_STEEL_PLASMA}>}
+ */
+export const PLASMA_MATERIALS = {
+  mild_steel: { key: 'mild_steel', label: 'Acciaio dolce', gas: 'aria', entries: MILD_STEEL_PLASMA },
+};
+
+/** Tabella spessori per un materiale (fallback acciaio dolce). @param {string} key */
+export function materialEntries(key) {
+  return (PLASMA_MATERIALS[key] || PLASMA_MATERIALS.mild_steel).entries;
+}
+
+/** Parametri di taglio per lo spessore più vicino nella tabella. @param {number} thickness */
 export function cutParamsFor(thickness, table = MILD_STEEL_PLASMA) {
   let best = table[0], bd = Infinity;
   for (const p of table) { const d = Math.abs(p.t - thickness); if (d < bd) { bd = d; best = p; } }
