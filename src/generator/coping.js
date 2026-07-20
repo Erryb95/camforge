@@ -12,9 +12,13 @@
 //     x = t·cosθ − r·cosφ·sinθ ;  y = r·sinφ ;  z = t·sinθ + r·cosφ·cosθ
 //   imponendo y²+z²=R² → quadratica in t:
 //     A·t² + B·t + C = 0 ,  A = sin²θ , B = r·sin(2θ)·cosφ , C = r²(sin²φ+cos²φ·cos²θ) − R²
-//     t(φ) = (−B + √(B²−4AC)) / (2A)   (radice near-side)
-//   θ=90°  ⇒  t(φ) = √(R² − r²·sin²φ)  (cope perpendicolare, da manuale)
-//   r=R,θ=90° ⇒ t(φ) = R·|cosφ|  (solido di Steinmetz: due cilindri uguali)
+//   Il discriminante si semplifica: B²−4AC = 4·sin²θ·(R²−r²·sin²φ), da cui la FORMA CHIUSA
+//   (radice near-side), che usiamo qui perché stabile e identica ai riferimenti pubblicati:
+//     t(φ) = [ √(R² − r²·sin²φ) − r·cosφ·cosθ ] / sinθ
+//   θ=90°  ⇒  t(φ) = √(R² − r²·sin²φ)  (cope perpendicolare, = Steinmetz curve, da manuale)
+//   r=R,θ=90° ⇒ t(φ) = R·|cosφ|  (solido di Steinmetz: due cilindri uguali → due ellissi)
+//   Riferimenti: Steinmetz curve/solid (Wikipedia/MathWorld); tube-coping calculators
+//   calculator.city e weldfabworld (stessa forma chiusa, datum diverso). Verifica in test.
 //   Sviluppo: v = r·φ (arco) ,  u = t(φ). La correttezza è verificata contro queste
 //   forme chiuse nei test (tests/coping.test.mjs) — nessun taglio reale necessario.
 
@@ -34,16 +38,14 @@ export function copeProfile(o) {
   const th = (o.angleDeg ?? 90) * Math.PI / 180;
   const n = Math.max(24, Math.round(o.points ?? 180));
   const sinT = Math.sin(th), cosT = Math.cos(th);
-  const A = sinT * sinT;
   let warning;
+  // forma chiusa (radice near-side): t(φ) = [√(R²−r²·sin²φ) − r·cosφ·cosθ] / sinθ.
   const tOf = (phi) => {
-    if (A < 1e-9) return NaN;                       // θ→0: assi paralleli, degenere
+    if (sinT < 1e-9) return NaN;                     // θ→0: assi paralleli, degenere
     const cph = Math.cos(phi), sph = Math.sin(phi);
-    const B = r * Math.sin(2 * th) * cph;
-    const C = r * r * (sph * sph + cph * cph * cosT * cosT) - R * R;
-    let disc = B * B - 4 * A * C;
-    if (disc < 0) { disc = 0; warning = 'branch troppo grande per il main (Ø branch > Ø main a questo angolo): intaglio troncato'; }
-    return (-B + Math.sqrt(disc)) / (2 * A);         // near-side
+    let rad = R * R - r * r * sph * sph;             // = (B²−4AC)/(4sin²θ)
+    if (rad < 0) { rad = 0; warning = 'branch troppo grande per il main (Ø branch > Ø main): intaglio troncato'; }
+    return (Math.sqrt(rad) - r * cph * cosT) / sinT;
   };
   const pts = [];
   let tMin = Infinity, tMax = -Infinity;
