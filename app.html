@@ -14,6 +14,7 @@
          accept=".nc,.gcode,.ngc,.tap,.cnc,.iso,.eia,.din,.mpf,.pgm,.txt,.dxf,.dwg,.cn,.ctd,.atd,.stp,.step,.igs,.iges,.brep">
   <button id="btnDemo" title="Carica il programma dimostrativo">Demo</button>
   <button id="btnDemoRotary" title="DEMO CAM tubo/rotary: avvolge un pattern sullo svolto del tubo, genera G-code QtPlasmaC (X asse tubo, A rotazione) e simula il taglio &mdash; &#11015; NC per scaricarlo">&#127744; Tubo rotary</button>
+  <button id="btnCoping" title="Coping / fish-mouth: intaglio di un tubo (branch) che si innesta su un altro (main). Genera il G-code QtPlasmaC e simula l'avvolgimento sul tubo.">&#9707; Coping tubo</button>
   <span class="sep"></span>
   <div class="seg-btns" id="viewBtns" title="Piano di vista">
     <button data-v="XY" class="active">XY</button>
@@ -172,6 +173,25 @@
       <button id="rotaryCancel">Annulla</button>
       <button id="rotaryMat" title="Scarica il material file QtPlasmaC (kerf/feed/pierce/altezze per spessore) da caricare nella tua configurazione">&#11015; Material file</button>
       <button id="rotaryGo" class="primary">&#11015; Genera G-code QtPlasmaC</button>
+    </div>
+  </div>
+</div>
+
+<div id="copeDlg" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">&#9707; Coping tubo (fish-mouth)</div>
+    <div id="copeInfo" class="modal-info">Intaglio del tubo <b>branch</b> perch&eacute; combaci sul tubo <b>main</b>. Profilo dall'intersezione dei cilindri (verificato contro la forma chiusa), avvolto sull'asse A &rarr; G-code QtPlasmaC.</div>
+    <div class="modal-grid">
+      <label>&Oslash; Branch &mdash; da tagliare (mm)<input type="number" id="cBranch" min="1" step="0.1" value="50"></label>
+      <label>&Oslash; Main &mdash; su cui si innesta (mm)<input type="number" id="cMain" min="1" step="0.1" value="60"></label>
+      <label>Angolo tra gli assi (&deg;)<input type="number" id="cAngle" min="15" max="90" step="1" value="90"></label>
+      <label>Materiale<select id="cAlloy"></select></label>
+      <label>Spessore<select id="cMat"></select></label>
+      <label>Feed (mm/min)<input type="number" id="cFeed" min="1" step="10"></label>
+    </div>
+    <div class="modal-actions">
+      <button id="copeCancel">Annulla</button>
+      <button id="copeGo" class="primary">&#11015; Genera coping QtPlasmaC</button>
     </div>
   </div>
 </div>

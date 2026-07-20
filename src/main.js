@@ -20,6 +20,7 @@ import { foldMeshFromCenterline } from './sim/tubebend.js';  // PIEGATURA tubo: 
 import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pezzo 3D: mesh → percorso raster
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
+import { copeToRotary } from './generator/coping.js';  // coping/fish-mouth tubo-tubo → wrap asse A → G-code QtPlasmaC
 import { cutParamsFor, PLASMA_MATERIALS, materialEntries } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per lega+spessore
 import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
 import { isPro, activatePro, PRICING_URL } from './license.js';   // gating Free/Pro (export = Pro)
@@ -628,6 +629,51 @@ $('btnDemoRotary').addEventListener('click', () => {
     toast(`Demo rotary fallita: ${/** @type {Error} */(err).message}`);
   }
 });
+
+// COPING tubo (fish-mouth): dialog parametrica branch/main/angolo → profilo di
+// intersezione (verificato contro la forma chiusa) avvolto sull'asse A → G-code
+// QtPlasmaC-nativo + modello 3D avvolto (simulazione). Non serve un file sorgente.
+$('btnCoping').addEventListener('click', () => { $('copeDlg').hidden = false; });
+(function initCopeDlg() {
+  const dlg = $('copeDlg');
+  const alloySel = /** @type {HTMLSelectElement} */ ($('cAlloy'));
+  const mat = /** @type {HTMLSelectElement} */ ($('cMat'));
+  alloySel.innerHTML = Object.values(PLASMA_MATERIALS).map((a) => `<option value="${a.key}">${a.label}</option>`).join('');
+  const applyPreset = () => {
+    const p = cutParamsFor(parseFloat(mat.value), materialEntries(alloySel.value));
+    /** @type {HTMLInputElement} */ ($('cFeed')).value = String(p.feed);
+  };
+  const rebuildThickness = () => {
+    const entries = materialEntries(alloySel.value);
+    mat.innerHTML = entries.map((p) => `<option value="${p.t}">${p.t} mm (${p.amps}A)</option>`).join('');
+    applyPreset();
+  };
+  alloySel.addEventListener('change', rebuildThickness);
+  mat.addEventListener('change', applyPreset);
+  rebuildThickness();
+
+  $('copeCancel').addEventListener('click', () => { dlg.hidden = true; });
+  $('copeGo').addEventListener('click', () => {
+    try {
+      const branchDiameter = parseFloat(/** @type {HTMLInputElement} */ ($('cBranch')).value) || 50;
+      const mainDiameter = parseFloat(/** @type {HTMLInputElement} */ ($('cMain')).value) || 60;
+      const angleDeg = parseFloat(/** @type {HTMLInputElement} */ ($('cAngle')).value) || 90;
+      const thickness = parseFloat(mat.value);
+      const feed = parseFloat(/** @type {HTMLInputElement} */ ($('cFeed')).value) || undefined;
+      const { model: m, gcode, name, info } = copeToRotary({ branchDiameter, mainDiameter, angleDeg, thickness, material: alloySel.value, feed });
+      displayModel(m, name);
+      lastGen = { name, text: gcode };
+      lastStep = null;
+      $('btnGenNc').hidden = true;
+      $('btnDlNc').hidden = false;
+      dlg.hidden = true;
+      toast(`Coping: ${info} — ▶ per simulare, ⬇ NC per scaricarlo`, true);
+    } catch (err) {
+      console.error(err);
+      toast(`Coping fallito: ${/** @type {Error} */(err).message}`);
+    }
+  });
+})();
 
 // DXF → Tubo rotary: apre il pannello parametri (Ø, lunghezza, materiale/spessore
 // → preset kerf/feed/pierce, lead-in). Genera il G-code QtPlasmaC con kerf
