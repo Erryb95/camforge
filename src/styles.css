@@ -79,6 +79,39 @@ button.toggle.active { opacity: 1; }
 #progress { width: 160px; accent-color: var(--accent); }
 #btnPlay { width: 36px; }
 
+/* ---------- gerarchia della toolbar (design skill) ---------- */
+/* azioni di GENERAZIONE CAM: accent cyan = "crea qualcosa" (le azioni primarie) */
+#btnDemoRotary, #btnCoping, #btnSheetCut, #btnDxfRotary, #btnMillPart, #btnGenNc {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel2));
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  color: #dff6fb;
+}
+#btnDemoRotary:hover, #btnCoping:hover, #btnSheetCut:hover, #btnDxfRotary:hover, #btnMillPart:hover, #btnGenNc:hover {
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel2));
+  border-color: var(--accent);
+}
+/* EXPORT: scarica il risultato → ember caldo ("porta a casa") */
+#btnDlNc {
+  background: color-mix(in srgb, var(--warn) 16%, var(--panel2));
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--border));
+  color: #ffe7d1;
+}
+#btnDlNc:hover { background: color-mix(in srgb, var(--warn) 26%, var(--panel2)); border-color: var(--warn); }
+/* PLAY: azione di simulazione, un filo più marcata */
+#btnPlay {
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel2));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: #eaf9fc; font-size: 14px;
+}
+#btnPlay:hover { border-color: var(--accent); }
+/* riga-arco sotto la barra + separatori sfumati (identità "arc-in-the-shop") */
+#topbar { position: relative; row-gap: 6px; }
+#topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent) 28%, color-mix(in srgb, var(--warn) 30%, transparent) 72%, transparent);
+}
+.sep { background: linear-gradient(180deg, transparent, var(--border) 20%, var(--border) 80%, transparent); }
+
 /* ---------- layout centrale ---------- */
 main { flex: 1; display: flex; min-height: 0; }
 .panel {
