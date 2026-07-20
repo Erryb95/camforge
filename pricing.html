@@ -69,8 +69,8 @@
             <li>All posts: LinuxCNC · GRBL · Cutlite · QtPlasmaC</li>
             <li>Updates &amp; new features</li>
           </ul>
-          <a class="btn primary lemonsqueezy-button" id="buyBtn" href="#" rel="noopener">Get Pro →</a>
-          <p class="pay-note">🔒 Secure checkout via Lemon Squeezy · instant license key · VAT handled for you</p>
+          <a class="btn primary" id="buyBtn" data-polar-checkout data-polar-checkout-theme="dark" href="#" rel="noopener">Get Pro →</a>
+          <p class="pay-note">🔒 Secure checkout via Polar · instant license key · VAT handled for you</p>
         </div>
       </div>
 
@@ -95,21 +95,22 @@
   <div class="wrap" style="margin-top:16px"><small>Verify every program on your own machine before cutting.</small></div>
 </footer>
 
-<!-- Lemon Squeezy overlay: apre il checkout IN-PAGINA (i dati carta stanno su
-     Lemon Squeezy, mai qui). Merchant of Record: gestisce IVA/fatture al posto tuo. -->
-<script src="https://assets.lemonsqueezy.com/lemon.js" defer></script>
+<!-- Polar overlay: apre il checkout IN-PAGINA (i dati carta stanno su Polar, mai
+     qui). Merchant of Record con le fee più basse: gestisce IVA/fatture al posto tuo. -->
+<script src="https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.1/dist/embed.global.js" defer data-polar-checkout></script>
 <script>
   // ----------------------------------------------------------------------------
-  // CHECKOUT — Lemon Squeezy (Merchant of Record). SOSTITUISCI i due URL qui sotto
-  // con i "buy" link delle tue VARIANTI, dopo aver creato il prodotto su Lemon
-  // Squeezy (un prodotto "CamForge Pro" con 2 varianti: abbonamento $6/mese e
-  // lifetime $49). Il buy URL è tipo:  https://TUOSTORE.lemonsqueezy.com/buy/UUID
-  // Consiglio: attiva la Licensing di Lemon Squeezy → il cliente riceve una license
-  // key da incollare in ⚡ Upgrade → Activate. Finché sono placeholder, il bottone
-  // mostra le istruzioni. (Guida: docs.lemonsqueezy.com/help/checkout/checkout-overlay)
+  // CHECKOUT — Polar (Merchant of Record, fee più basse tra i MoR: 5% flat, senza i
+  // sovrapprezzi internazionale/payout di Lemon Squeezy). SOSTITUISCI i due URL qui
+  // sotto con i tuoi Checkout Link, dopo aver creato il prodotto su Polar
+  // (Products → "CamForge Pro" con 2 prezzi: abbonamento $6/mese e lifetime $49 →
+  // Checkout Links). Il link è tipo:  https://buy.polar.sh/<id>
+  // Consiglio: attiva License Keys → il cliente riceve una key da incollare in
+  // ⚡ Upgrade → Activate. Finché sono placeholder, il bottone mostra le istruzioni.
+  // (Guida: docs.polar.sh/features/checkout/embed)
   const CHECKOUT = {
-    monthly:  "https://YOURSTORE.lemonsqueezy.com/buy/REPLACE_WITH_YOUR_MONTHLY_VARIANT",
-    lifetime: "https://YOURSTORE.lemonsqueezy.com/buy/REPLACE_WITH_YOUR_LIFETIME_VARIANT",
+    monthly:  "https://buy.polar.sh/REPLACE_WITH_YOUR_MONTHLY_LINK",
+    lifetime: "https://buy.polar.sh/REPLACE_WITH_YOUR_LIFETIME_LINK",
   };
   // ----------------------------------------------------------------------------
   const PRICES = {
@@ -118,31 +119,25 @@
   };
   let plan = "monthly";
   const $ = (id) => document.getElementById(id);
-  const configured = (u) => u && !u.includes("REPLACE_WITH") && !u.includes("YOURSTORE");
+  const configured = (u) => u && !u.includes("REPLACE_WITH");
   function render() {
     const p = PRICES[plan];
     $("proPrice").textContent = p.price;
     $("proPer").textContent = p.per;
     $("proSub").textContent = p.sub;
-    // href del bottone LS = buy URL della variante + ?embed=1 (overlay in-pagina)
+    // il bottone ha data-polar-checkout: l'embed apre l'overlay sull'href impostato
     const url = CHECKOUT[plan];
-    $("buyBtn").setAttribute("href", configured(url) ? url + "?embed=1" : "#");
+    $("buyBtn").setAttribute("href", configured(url) ? url : "#");
     document.querySelectorAll("#billing button").forEach((b) => b.classList.toggle("on", b.dataset.plan === plan));
   }
   document.querySelectorAll("#billing button").forEach((b) =>
     b.addEventListener("click", () => { plan = b.dataset.plan; render(); }));
   $("buyBtn").addEventListener("click", (e) => {
-    const url = CHECKOUT[plan];
-    if (!configured(url)) {
+    if (!configured(CHECKOUT[plan])) {
       e.preventDefault();
-      alert("Checkout non ancora collegato.\n\n1) Crea il prodotto 'CamForge Pro' su Lemon Squeezy (2 varianti: $6/mese e $49 lifetime).\n2) Copia i 'buy' URL delle varianti e incollali in CHECKOUT in questa pagina.\n3) (Consigliato) attiva Licensing → license key automatica.\n\nLemon Squeezy fa da Merchant of Record: gestisce l'IVA e le fatture al posto tuo.");
-      return;
+      alert("Checkout non ancora collegato.\n\n1) Crea il prodotto 'CamForge Pro' su Polar (2 prezzi: $6/mese e $49 lifetime).\n2) Genera i Checkout Link e incollali in CHECKOUT in questa pagina.\n3) (Consigliato) attiva le License Keys → key automatica.\n\nPolar fa da Merchant of Record: gestisce l'IVA e le fatture al posto tuo, con le fee più basse tra i MoR.");
     }
-    // se lemon.js è caricato, apre l'overlay; altrimenti apre il checkout in una tab
-    if (window.LemonSqueezy && window.LemonSqueezy.Url) {
-      e.preventDefault();
-      window.LemonSqueezy.Url.Open(url + "?embed=1");
-    }
+    // se configurato, ci pensa l'embed Polar (data-polar-checkout) ad aprire l'overlay
   });
   render();
 </script>
