@@ -92,14 +92,16 @@ async function pickAndOpen() {
 // Concede la CAMERA (getUserMedia) alle sole origini locali fidate (127.0.0.1/localhost),
 // senza prompt bloccanti — serve al controllo a mani. Servono entrambi gli handler.
 function installMediaPermissions(ses) {
-  const MEDIA = new Set(['media', 'camera', 'microphone']);
+  // solo CAMERA (video) — il controllo a mani non usa il microfono; niente 'microphone'
+  const MEDIA = new Set(['media', 'camera']);
   const localOrigin = (u) => {
     try { const { protocol, hostname } = new URL(u || ''); return protocol === 'http:' && (hostname === '127.0.0.1' || hostname === 'localhost'); }
     catch { return false; }
   };
   ses.setPermissionRequestHandler((wc, permission, cb, details) => {
     const url = (details && details.requestingUrl) || (wc && wc.getURL());
-    cb(MEDIA.has(permission) && localOrigin(url));
+    const wantsAudio = !!(details && Array.isArray(details.mediaTypes) && details.mediaTypes.includes('audio'));
+    cb(MEDIA.has(permission) && !wantsAudio && localOrigin(url));   // nega qualsiasi richiesta di microfono
   });
   ses.setPermissionCheckHandler((wc, permission, origin, details) => {
     const url = origin || (details && details.securityOrigin) || (wc && wc.getURL());

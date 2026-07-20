@@ -32,7 +32,7 @@ function glyphStrokes(d) {
  * @returns {{polylines:{u:number,v:number}[][], width:number, height:number}}
  */
 export function textToPolylines(str, opts = {}) {
-  const size = opts.size ?? 20;                 // altezza cap in mm
+  const size = opts.size > 0 ? opts.size : 20;  // altezza cap in mm (guarda 0/NaN/negativi → no NaN nel G-code)
   const scale = size / CAP;
   const x0 = opts.x ?? 0, y0 = opts.y ?? 0;
   const gap = (opts.gap ?? 2.5) / scale;        // spazio tra lettere (in unità font)
@@ -52,7 +52,9 @@ export function textToPolylines(str, opts = {}) {
       const pl = sub.map(([x, y]) => ({ u: x0 + (cx + (x - minX)) * scale, v: y0 - y * scale }));
       if (pl.length >= 2) out.push(pl);
     }
-    cx += (maxX - minX) + gap;
+    // avanzamento = larghezza inchiostro, ma con un minimo dall'advance nativo `o`
+    // così i glifi sottili (l, i, punteggiatura, ink≈0) non collassano sullo spazio
+    cx += Math.max(maxX - minX, (g.o || 0) * 0.5) + gap;
   }
   return { polylines: out, width: cx * scale, height: size };
 }

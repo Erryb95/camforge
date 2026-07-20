@@ -16,7 +16,8 @@ export function estimateJob(gcode, opts = {}) {
   let cutLen = 0, rapidLen = 0, pierces = 0;
   let x = 0, y = 0, seen = false;
   for (const line of gcode.split('\n')) {
-    if (/^\s*M0?3\b/.test(line)) pierces++;
+    // conta i pierce di TAGLIO (M03 $0 / M3 S<power>), NON lo scribe/marcatura (M03 $1/$2)
+    if (/^\s*M0?3\b/.test(line) && !/\$[12]\b/.test(line)) pierces++;
     const isG0 = /^\s*G0\b/.test(line), isG1 = /^\s*G0?1\b/.test(line);
     if (!isG0 && !isG1) continue;
     const mx = /X(-?[\d.]+)/.exec(line), my = /Y(-?[\d.]+)/.exec(line);

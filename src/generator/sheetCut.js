@@ -25,11 +25,12 @@ export async function sheetCutFromModel(model, opts = {}) {
   let contours = contoursFromModel(model);
   if (!contours.length) throw new Error('nessun contorno CHIUSO nel disegno (servono profili chiusi da tagliare)');
 
-  // NESTING: se si richiedono più copie, replica il pezzo sul foglio (griglia bbox).
-  // Più perimetri ⇒ forza topology 'sheet' (ogni top-level è un perimetro di pezzo).
-  let topology = opts.topology ?? 'sheet';
+  // Contesto lamiera PIATTA: i contorni top-level sono PERIMETRI (sheet). 'auto' qui →
+  // 'sheet' (per il tubo/rotary c'è il ramo dedicato); solo un esplicito 'tube' inverte.
+  let topology = opts.topology === 'tube' ? 'tube' : 'sheet';
   let nestInfo = '';
-  const count = Math.max(1, Math.round(opts.count ?? 1));
+  // count con tetto: evita OOM/freeze se l'utente chiede copie enormi su feature minuscole
+  const count = Math.max(1, Math.min(5000, Math.round(opts.count ?? 1)));
   if (count > 1) {
     const nest = nestGrid(contours, {
       count, sheetW: opts.sheetW, sheetH: opts.sheetH, gap: opts.nestGap, allowRotate: opts.allowRotate,
@@ -43,18 +44,21 @@ export async function sheetCutFromModel(model, opts = {}) {
   const thickness = opts.thickness ?? 2;
   const materialKey = opts.materialKey || 'mild_steel';
   const preset = cutParamsFor(thickness, materialEntries(materialKey));
-  const kerf = opts.kerf ?? preset.kerf;
-  const feed = opts.feed ?? preset.feed;
+  const kerf = Number.isFinite(opts.kerf) ? opts.kerf : preset.kerf;
+  const feed = Number.isFinite(opts.feed) ? opts.feed : preset.feed;   // NaN-safe (campo UI vuoto)
   const dialect = opts.dialect || 'qtplasmac';
-  // material file QtPlasmaC solo per il dialetto QtPlasmaC; grbl/laser non usa M190
-  const material = dialect === 'qtplasmac' ? (opts.material ?? materialNumber(materialKey, thickness)) : null;
-
   const operation = opts.operation ?? 'cut';   // cut | engrave | pocket
+  // material file QtPlasmaC solo per il TAGLIO QtPlasmaC; grbl/laser e la marcatura (scribe) non usano M190
+  const material = (dialect === 'qtplasmac' && operation !== 'engrave')
+    ? (opts.material ?? materialNumber(materialKey, thickness)) : null;
+
+  let pocketWarn = '';
   /** @type {{contours:any[], holes:number, sheet:boolean, skipped:number}} */
   let cam;
   if (operation === 'pocket') {
     // POCKET: passate concentriche che svuotano l'area (riuso offsetClosed). v1: usa
     // il contorno più ESTERNO (area max) come confine; le isole/fori sono fase futura.
+    if (count > 1) pocketWarn = ` · ⚠ pocket: svuotato solo il pezzo più grande (copie/isole non ancora supportate)`;
     const tool = kerf > 0 ? kerf : 1;
     const area = (c) => { let a = 0; const p = c.pts; for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += p[j].u * p[i].v - p[i].u * p[j].v; return Math.abs(a); };
     const boundary = contours.reduce((m, c) => (area(c) > area(m) ? c : m), contours[0]);
@@ -110,7 +114,7 @@ export async function sheetCutFromModel(model, opts = {}) {
     + `${(uMax - uMin).toFixed(0)}×${(vMax - vMin).toFixed(0)} mm · ${materialKey} ${thickness} mm${operation === 'cut' ? ` · kerf ${kerf} mm` : ''} · feed ${feed} mm/min`;
   if (opts.tabCount) info += ` · ${opts.tabCount} tab/pezzo (${opts.tabLen ?? 3} mm)`;
   if (slowed) info += ` · ${slowed} fori piccoli @ ${Math.round(smallHoleFactor * 100)}%`;
-  info += nestInfo;
+  info += nestInfo + pocketWarn;
   if (cam.skipped) info += ` · ⚠ ${cam.skipped} contorni < kerf saltati`;
 
   return { gcode: post.text, lines: post.lines, name, info, cam };
@@ -132,7 +136,7 @@ export function sheetTextGcode(text, opts = {}) {
     holes: 0, sheet: false, skipped: 0,
   };
   const dialect = opts.dialect || 'qtplasmac';
-  const material = dialect === 'qtplasmac' ? (opts.material ?? materialNumber(opts.materialKey || 'mild_steel', opts.thickness ?? 2)) : null;
+  const material = null;   // marcatura/scribe: nessun material file di taglio (niente M190/M66)
   const name = opts.name || `testo.mark.ngc`;
   const post = postSheetCut(cam, { dialect, feed: opts.feed ?? 3000, power: opts.power, material, engrave: true, customPost: opts.customPost, name });
   const info = `marcatura testo "${text}" · ${t.width.toFixed(0)}×${t.height.toFixed(0)} mm · ${t.polylines.length} tratti · ${dialect}`;

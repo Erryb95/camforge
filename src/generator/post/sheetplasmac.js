@@ -13,7 +13,8 @@
 // TAB: sui contorni PERIMETRO (non i fori) si interrompe l'arco per `count` tratti
 // di lunghezza `len` → il pezzo resta attaccato allo scheletro.
 
-const f = (n) => { const s = n.toFixed(3); return s.replace(/\.?0+$/, '') || '0'; };
+const f = (n) => { if (!Number.isFinite(n)) return '0'; const s = n.toFixed(3); return s.replace(/\.?0+$/, '') || '0'; };
+const numOr = (v, d) => (Number.isFinite(v) ? v : d);   // scarta anche NaN (?? no)
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /**
@@ -27,7 +28,12 @@ export function planTabRuns(pts, count, len) {
   const cum = [0];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i], pts[i - 1]));
   const total = cum[cum.length - 1];
-  if (total < count * len * 2) return [pts.slice()];        // troppo piccolo per i tab richiesti
+  // ADATTA i tab al perimetro invece di ometterli in silenzio (il pezzo si staccherebbe):
+  // riduci prima il numero, poi la lunghezza; rinuncia solo su un perimetro davvero minuscolo.
+  let n = count, L = len;
+  if (total < n * L * 2) n = Math.max(1, Math.floor(total / (L * 2)));
+  if (total < n * L * 2) L = Math.max(0.2, total / (n * 4));
+  if (total < n * L * 1.2 || total < 2) return [pts.slice()];   // impossibile: perimetro troppo corto
   const at = (s) => {
     let i = 1; while (i < cum.length && cum[i] < s) i++;
     if (i >= cum.length) return { ...pts[pts.length - 1] };
@@ -35,7 +41,7 @@ export function planTabRuns(pts, count, len) {
     return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t };
   };
   const tabs = [];
-  for (let i = 0; i < count; i++) { const c = (i + 0.5) * total / count; tabs.push([c - len / 2, c + len / 2]); }
+  for (let i = 0; i < n; i++) { const c = (i + 0.5) * total / n; tabs.push([c - L / 2, c + L / 2]); }
   const runs = [];
   const emitRun = (a, b) => {
     const run = [at(a)];
@@ -144,11 +150,11 @@ function buildCustom(cp) {
  */
 export function postSheetCut(cam, opts = {}) {
   const d = opts.dialect === 'custom' ? buildCustom(opts.customPost || {}) : (DIALECTS[opts.dialect || 'qtplasmac'] || DIALECTS.qtplasmac);
-  const feed = opts.feed ?? 3000;
-  const power = opts.power ?? 800;
+  const feed = numOr(opts.feed, 3000);        // scarta NaN (campo UI svuotato) → default, mai "FNaN"
+  const power = numOr(opts.power, 800);
   const material = opts.material === undefined ? 0 : opts.material;
-  const tabCount = opts.tabCount ?? 0;
-  const tabLen = opts.tabLen ?? 3;
+  const tabCount = numOr(opts.tabCount, 0);
+  const tabLen = numOr(opts.tabLen, 3);
   const engrave = !!opts.engrave;             // marcatura/scribe on-line (no taglio passante)
   const pierceS = engrave ? 0 : (opts.pierceMs !== undefined ? opts.pierceMs / 1000 : Math.max(0.3, 0.07 * (opts.thickness ?? 2)));
   // QtPlasmaC ha lo SCRIBE come tool #1 (M03 $1): usato per marcare senza tagliare.
@@ -171,7 +177,7 @@ export function postSheetCut(cam, opts = {}) {
     const runs = (!c.hole && tabCount > 0) ? planTabRuns(pts, tabCount, tabLen) : [pts];
 
     // primo run: preceduto dal lead-in (che termina su pts[0] = runs[0][0])
-    const cf = c.feed ?? feed;          // feed per-contorno (regola fori piccoli)
+    const cf = numOr(c.feed, feed);     // feed per-contorno (regola fori piccoli), NaN-safe
     const first = runs[0];
     const entry = lead.length ? lead[0] : first[0];
     L.push(`G0 X${f(entry.x)} Y${f(entry.y)}`);
@@ -180,7 +186,8 @@ export function postSheetCut(cam, opts = {}) {
     let feededOnce = false;
     const g1 = (p) => { L.push(`G1 X${f(p.x)} Y${f(p.y)}${feededOnce ? '' : ` F${f(cf)}`}`); feededOnce = true; };
     for (const p of lead.slice(1)) g1(p);           // lead-in (dal 2° punto)
-    for (let k = (lead.length ? 1 : 0); k < first.length; k++) g1(first[k]);
+    // start da k=1: il punto d'attacco (first[0]) è già raggiunto dal G0/lead → niente G1 nullo
+    for (let k = 1; k < first.length; k++) g1(first[k]);
     // run successivi: tab = torcia OFF, rapido oltre il ponticello, riaccendi
     for (let r = 1; r < runs.length; r++) {
       L.push(...offCodes);

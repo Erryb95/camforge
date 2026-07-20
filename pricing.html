@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- CSP: script solo da self + jsdelivr (embed Polar); connessioni/frame solo verso Polar →
+     un embed compromesso non può esfiltrare i dati carta verso domini terzi. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://api.polar.sh https://*.polar.sh; frame-src https://polar.sh https://buy.polar.sh https://*.polar.sh; base-uri 'self'; form-action 'self' https://*.polar.sh; object-src 'none'">
 <title>Pricing — CamForge</title>
 <meta name="description" content="Free to view and simulate. Pro unlocks G-code and material-file export across the whole CAD/CAM suite. Monthly or one-time.">
 <link rel="stylesheet" href="site.css">

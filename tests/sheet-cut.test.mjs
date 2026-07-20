@@ -63,13 +63,16 @@ test('sheetCut: dialetto GRBL/laser — niente M190, M3 S + G4 pierce', async ()
   assert.ok(gcode.trimEnd().endsWith('M2'));
 });
 
-test('planTabRuns: N tab → N+1 run; troppo piccolo → 1 run', () => {
+test('planTabRuns: N tab → N+1 run; se non entrano si ADATTANO (non omessi in silenzio)', () => {
   // quadrato 100×100 (perimetro 400): 4 tab → 5 run
   const sq = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }, { x: 0, y: 0 }];
   assert.equal(planTabRuns(sq, 4, 3).length, 5);
   assert.equal(planTabRuns(sq, 0, 3).length, 1);
-  // perimetro troppo corto per 10 tab da 30 mm → nessun tab
-  assert.equal(planTabRuns(sq, 10, 30).length, 1);
+  // 10 tab da 30 mm su perimetro 400: si ADATTANO (numero ridotto) → il pezzo resta trattenuto
+  assert.ok(planTabRuns(sq, 10, 30).length > 1, 'adatta i tab invece di ometterli (il pezzo si staccherebbe)');
+  // perimetro davvero minuscolo (< 2 mm) → impossibile: 1 run (il pezzo si taglia comunque per intero)
+  const tiny = [{ x: 0, y: 0 }, { x: 0.4, y: 0 }, { x: 0.4, y: 0.4 }, { x: 0, y: 0.4 }, { x: 0, y: 0 }];
+  assert.equal(planTabRuns(tiny, 6, 3).length, 1);
 });
 
 test('sheetCut: dialetti Mach3/Mach4/UCCNC — M3/M5 + M30, niente material file', async () => {

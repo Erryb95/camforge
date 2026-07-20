@@ -70,8 +70,15 @@ function svgArc(p0, rx, ry, xrotDeg, large, sweep, p1, out) {
 export function pathToPolylines(d) {
   const toks = d.match(/[MmLlHhVvCcSsQqTtAaZz]|-?\d*\.?\d+(?:[eE][-+]?\d+)?/g) || [];
   const subs = [];
-  let cur = null, cx = 0, cy = 0, sx = 0, sy = 0, pc = null, cmd = '', i = 0;
+  let cur = null, cx = 0, cy = 0, sx = 0, sy = 0, pc = null, pcType = '', cmd = '', i = 0;
   const num = () => parseFloat(toks[i++]);
+  // flag arco (0/1): può essere compattato senza separatore (es. SVGO "0110") ⇒ leggi UNA cifra
+  const flag = () => {
+    const t = toks[i];
+    if (t === '0' || t === '1') { i++; return +t; }
+    if (typeof t === 'string' && (t[0] === '0' || t[0] === '1')) { toks[i] = t.slice(1); return +t[0]; }
+    return +num();
+  };
   const start = () => { cur = { pts: [], closed: false }; subs.push(cur); };
   while (i < toks.length) {
     const t = toks[i];
@@ -87,21 +94,23 @@ export function pathToPolylines(d) {
     } else if (C === 'V') { const y = num() + (rel ? cy : 0); cy = y; cur.pts.push([cx, y]); pc = null;
     } else if (C === 'C' || C === 'S') {
       let x1, y1;
+      // S riflette il controllo SOLO se il comando precedente era C/S (spec SVG)
       if (C === 'C') { x1 = num() + (rel ? cx : 0); y1 = num() + (rel ? cy : 0); }
-      else { x1 = pc ? 2 * cx - pc[0] : cx; y1 = pc ? 2 * cy - pc[1] : cy; }
+      else { const rf = pc && pcType === 'C'; x1 = rf ? 2 * cx - pc[0] : cx; y1 = rf ? 2 * cy - pc[1] : cy; }
       const x2 = num() + (rel ? cx : 0), y2 = num() + (rel ? cy : 0);
       const x = num() + (rel ? cx : 0), y = num() + (rel ? cy : 0);
-      cubic([cx, cy], [x1, y1], [x2, y2], [x, y], cur.pts); pc = [x2, y2]; cx = x; cy = y;
+      cubic([cx, cy], [x1, y1], [x2, y2], [x, y], cur.pts); pc = [x2, y2]; pcType = 'C'; cx = x; cy = y;
     } else if (C === 'Q' || C === 'T') {
       let x1, y1;
+      // T riflette il controllo SOLO se il comando precedente era Q/T (spec SVG)
       if (C === 'Q') { x1 = num() + (rel ? cx : 0); y1 = num() + (rel ? cy : 0); }
-      else { x1 = pc ? 2 * cx - pc[0] : cx; y1 = pc ? 2 * cy - pc[1] : cy; }
+      else { const rf = pc && pcType === 'Q'; x1 = rf ? 2 * cx - pc[0] : cx; y1 = rf ? 2 * cy - pc[1] : cy; }
       const x = num() + (rel ? cx : 0), y = num() + (rel ? cy : 0);
-      quad([cx, cy], [x1, y1], [x, y], cur.pts); pc = [x1, y1]; cx = x; cy = y;
+      quad([cx, cy], [x1, y1], [x, y], cur.pts); pc = [x1, y1]; pcType = 'Q'; cx = x; cy = y;
     } else if (C === 'A') {
-      const rx = num(), ry = num(), rot = num(), large = num(), sweep = num();
+      const rx = num(), ry = num(), rot = num(), large = flag(), sweep = flag();   // flag = una cifra 0/1
       const x = num() + (rel ? cx : 0), y = num() + (rel ? cy : 0);
-      svgArc([cx, cy], rx, ry, rot, large, sweep, [x, y], cur.pts); cx = x; cy = y; pc = null;
+      svgArc([cx, cy], rx, ry, rot, large, sweep, [x, y], cur.pts); cx = x; cy = y; pc = null; pcType = '';
     } else if (C === 'Z') {
       if (cur) { cur.closed = true; cur.pts.push([sx, sy]); } cx = sx; cy = sy; pc = null; cmd = '';
       // Z non consuma numeri (il letter è già stato consumato); azzera cmd per evitare loop

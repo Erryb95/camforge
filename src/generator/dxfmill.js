@@ -71,7 +71,10 @@ export function weldSegments(segs, tol) {
     (buckets.get(k) || buckets.set(k, []).get(k)).push(q);
     return q;
   };
-  return { segs: segs.map((s) => ({ ...s, from: canon(s.from), to: canon(s.to) })), welded };
+  // i punti weldati condividono il riferimento canonico: from===to ⇒ segmento collassato a
+  // zero (micro-segmento sotto-tolleranza) → scartalo per non distorcere il contorno
+  const out = segs.map((s) => ({ ...s, from: canon(s.from), to: canon(s.to) })).filter((s) => s.from !== s.to);
+  return { segs: out, welded };
 }
 
 /**

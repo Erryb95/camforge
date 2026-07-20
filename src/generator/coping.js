@@ -40,8 +40,10 @@ export function copeProfile(o) {
   const sinT = Math.sin(th), cosT = Math.cos(th);
   let warning;
   // forma chiusa (radice near-side): t(φ) = [√(R²−r²·sin²φ) − r·cosφ·cosθ] / sinθ.
+  const degenerate = sinT < 1e-9;                    // θ→0 o 180: assi (quasi) paralleli
+  if (degenerate) warning = 'angolo troppo piccolo (assi quasi paralleli): coping non definito';
   const tOf = (phi) => {
-    if (sinT < 1e-9) return NaN;                     // θ→0: assi paralleli, degenere
+    if (degenerate) return NaN;
     const cph = Math.cos(phi), sph = Math.sin(phi);
     let rad = R * R - r * r * sph * sph;             // = (B²−4AC)/(4sin²θ)
     if (rad < 0) { rad = 0; warning = 'branch troppo grande per il main (Ø branch > Ø main): intaglio troncato'; }
@@ -53,9 +55,9 @@ export function copeProfile(o) {
     const phi = (TAU * i) / n;
     const t = tOf(phi);
     pts.push({ u: t, v: r * phi });
-    if (t < tMin) tMin = t;
-    if (t > tMax) tMax = t;
+    if (Number.isFinite(t)) { if (t < tMin) tMin = t; if (t > tMax) tMax = t; }   // ignora i NaN (angolo degenere)
   }
+  if (!Number.isFinite(tMin) || !Number.isFinite(tMax)) { tMin = 0; tMax = 0; }   // niente −Infinity/NaN a valle
   return { pts, circumference: TAU * r, notchDepth: tMax - tMin, tMin, tMax, warning };
 }
 
@@ -74,6 +76,10 @@ export function copeToRotary(o = {}) {
   const thickness = o.thickness ?? 2;
   const materialKey = o.material ?? 'mild_steel';
   const prof = copeProfile({ branchDiameter, mainDiameter, angleDeg, points: o.points ?? 180 });
+  // angolo/diametri degeneri → niente NGC con NaN/lunghezza negativa: errore chiaro
+  if (!Number.isFinite(prof.tMax) || prof.tMax <= prof.tMin) {
+    throw new Error(prof.warning || 'coping: geometria degenere — controlla angolo (15–90°) e diametri');
+  }
 
   // Posiziona l'intaglio sul tubo: valle (u minimo) a `stub` mm dall'origine (moncone
   // di scarto verso l'estremità), corpo tubo KEPT oltre le corna. u_cut = (t − tMin) + stub.
