@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LGE Rotary CAM — plasma tube cutting for open controllers</title>
+<meta name="description" content="Draw on the tube's flat pattern, wrap it onto the rotary A axis, export QtPlasmaC G-code. Rotary plasma CAM for LinuxCNC / GRBL / FluidNC — the thing SheetCam won't do.">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap nav">
+    <a class="brand" href="index.html">
+      <span class="spark"></span> LGE&nbsp;Rotary&nbsp;CAM <small class="hide-sm">/ plasma tube</small>
+    </a>
+    <span class="grow"></span>
+    <a href="index.html#how" class="hide-sm">How it works</a>
+    <a href="index.html#features" class="hide-sm">Features</a>
+    <a href="pricing.html">Pricing</a>
+    <a class="btn ghost" href="/" target="_blank" rel="noopener">Launch app</a>
+  </div>
+</header>
+
+<main>
+  <!-- HERO: the pipeline is the thesis -->
+  <section style="border-top:none">
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow">Rotary plasma CAM · LinuxCNC / GRBL / FluidNC</p>
+        <h1>Cut <span class="hl">tube</span> on your rotary axis.<br>Without fighting your CAM.</h1>
+        <p class="lead">
+          Draw your holes, slots and letters on the tube's flat pattern. LGE wraps them onto the
+          <b>A axis</b>, compensates the kerf, and exports <b>QtPlasmaC</b> G-code you can run today —
+          round <em>and</em> rectangular tube. The rotary post SheetCam still doesn't ship.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="/" target="_blank" rel="noopener">▶ Open the live demo</a>
+          <a class="btn" href="pricing.html">See pricing</a>
+          <span class="note">no install · runs in the browser</span>
+        </div>
+      </div>
+
+      <div class="viz">
+        <div class="panel">
+          <!-- tube with wrapped cut contours + torch spark -->
+          <svg viewBox="0 0 440 250" role="img" aria-label="A round tube with plasma-cut holes wrapping around the rotary axis">
+            <defs>
+              <linearGradient id="tube" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#2b3946"/><stop offset=".5" stop-color="#3d5364"/>
+                <stop offset="1" stop-color="#1a2530"/>
+              </linearGradient>
+              <radialGradient id="arc" cx="50%" cy="45%" r="60%">
+                <stop offset="0" stop-color="#ffffff"/><stop offset=".4" stop-color="#8fe9f6"/>
+                <stop offset=".75" stop-color="#3cc9de"/><stop offset="1" stop-color="#3cc9de00"/>
+              </radialGradient>
+            </defs>
+            <!-- ground axis -->
+            <line x1="20" y1="125" x2="420" y2="125" stroke="#26333f" stroke-width="1" stroke-dasharray="4 6"/>
+            <!-- tube body -->
+            <rect x="60" y="88" width="320" height="74" rx="6" fill="url(#tube)" stroke="#4a6272" stroke-width="1"/>
+            <ellipse cx="60" cy="125" rx="14" ry="37" fill="#121a22" stroke="#4a6272"/>
+            <ellipse cx="380" cy="125" rx="14" ry="37" fill="#1d2a35" stroke="#5a7688"/>
+            <!-- wrapped cut contours (ellipses read as holes on the curved surface) -->
+            <g fill="none" stroke="#3cc9de" stroke-width="1.6" opacity=".9">
+              <ellipse cx="150" cy="118" rx="11" ry="17"/>
+              <ellipse cx="215" cy="118" rx="11" ry="17"/>
+              <ellipse cx="280" cy="118" rx="11" ry="17"/>
+              <path d="M120 150 q40 14 90 0 q40 -14 90 0" stroke="#f5822a" stroke-width="1.6" opacity=".85"/>
+            </g>
+            <!-- travel (rapid) -->
+            <path d="M161 118 L204 118 M226 118 L269 118" stroke="#f5822a" stroke-width="1" stroke-dasharray="2 4" opacity=".6"/>
+            <!-- torch + spark on the top contour -->
+            <line x1="280" y1="40" x2="280" y2="97" stroke="#7f96a6" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="280" cy="101" r="16" fill="url(#arc)"/>
+            <circle cx="280" cy="101" r="3.5" fill="#fff"/>
+            <!-- axis labels -->
+            <text x="392" y="128" font-family="ui-monospace,monospace" font-size="11" fill="#647688">X</text>
+            <text x="280" y="34" font-family="ui-monospace,monospace" font-size="11" fill="#647688" text-anchor="middle">A↻</text>
+          </svg>
+          <pre class="gcode"><span class="c">(QtPlasmaC ROTARY · Ø60 tube · G93 inverse-time)</span>
+G21 G40 G90 G93
+<span class="m">#&lt;tube-cut&gt;=1</span>   <span class="m">M190 P4</span>
+G0 X67 <span class="a">A0</span>
+<span class="m">M03 $0 S1</span>   G04 P0.1
+G1 X66.94 <span class="a">A1.74</span> F2184
+G1 X66.76 <span class="a">A3.46</span> F2184  <span class="c">…</span>
+<span class="m">M05 $0</span></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLEM: the forum pain, in their words -->
+  <section id="problem">
+    <div class="wrap">
+      <p class="eyebrow">The gap</p>
+      <blockquote class="quote">
+        “I have built a fully functional pipe cutting machine… <b>The problem is SheetCAM.</b>
+        It generates the toolpath, but the post processor is <b>not compatible with QtPlasmaC</b>.”
+        <cite>— LinuxCNC forum, “No CAM option for Rotary QtPlasmac?!”</cite>
+      </blockquote>
+      <p style="color:var(--muted);max-width:44em;margin-top:22px">
+        People building rotary tube machines end up hand-editing <span style="font-family:var(--mono);color:#b9c9d6">G0&nbsp;A90</span>
+        between cuts. Commercial CAM either can't post to QtPlasmaC or costs 3–4× more and still skips
+        native rotary. LGE is built for exactly this corner.
+      </p>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS: a real 3-step sequence -->
+  <section id="how">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">How it works</p>
+        <h2>Flat pattern in, QtPlasmaC out.</h2>
+        <p>Three steps, all in the browser — no install, no cloud, your files stay on your machine.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <div class="n">01 — UNROLL</div>
+          <h3>Draw on the developed tube</h3>
+          <p>Import a DXF (or STEP profile), or lay out holes and slots on the tube's flat pattern. u = along the tube, v = around it.</p>
+        </div>
+        <div class="step">
+          <div class="n">02 — WRAP</div>
+          <h3>Wrap onto the A axis</h3>
+          <p>The design maps to the rotary angle (A = the true section angle) with kerf compensation, lead-in/out and inside-out sequencing.</p>
+        </div>
+        <div class="step">
+          <div class="n">03 — POST</div>
+          <h3>Export &amp; simulate</h3>
+          <p>Get QtPlasmaC G-code (G93 inverse-time, tube-cut, torch-follow Z) plus a matching material file. Watch it cut in 3D first.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">What's inside</p>
+        <h2>A real plasma CAM, not a viewer with a toy button.</h2>
+      </div>
+      <div class="feat">
+        <div class="card"><div class="ic">⌀</div><h3>Round &amp; rectangular tube</h3><p>True geometric A-axis mapping. Torch-follow Z keeps standoff on rectangular sections where the radius changes.</p></div>
+        <div class="card"><div class="ic">↹</div><h3>Kerf compensation</h3><p>Outer +kerf/2, holes −kerf/2, Hypertherm swirl direction (outer CW, holes CCW). Split holes are handled, tiny ones flagged.</p></div>
+        <div class="card"><div class="ic">⟿</div><h3>Lead-in / lead-out</h3><p>Tangent arc lead-ins from the scrap side, hole overburn (QtPlasmaC #&lt;oclength&gt;), inside-out ordering.</p></div>
+        <div class="card"><div class="ic">▦</div><h3>Real cut charts</h3><p>Mild steel, stainless 304, aluminium, FineCut, F5 — kerf / feed / pierce / arc-volts from Hypertherm Powermax SYNC charts.</p></div>
+        <div class="card"><div class="ic">P</div><h3>QtPlasmaC material files</h3><p>Export a ready <span style="font-family:var(--mono);color:#b9c9d6">*_material.cfg</span> and select it in the program with M190 P&lt;n&gt;. No hand-typing cut charts.</p></div>
+        <div class="card"><div class="ic">▶</div><h3>Simulate before you burn</h3><p>3D tube, developed view, code↔part sync. See every cut wrap around the tube before it touches metal.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING teaser -->
+  <section id="pricing-teaser">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">Pricing</p>
+        <h2>Free to try. Pro to export.</h2>
+        <p>Preview and simulate everything for free. Exporting G-code and material files unlocks with Pro —
+          a fraction of what a commercial seat costs.</p>
+      </div>
+      <a class="btn primary" href="pricing.html">See plans</a>
+    </div>
+  </section>
+</main>
+
+<footer class="site">
+  <div class="wrap foot">
+    <a class="brand" href="index.html"><span class="spark"></span> LGE Rotary CAM</a>
+    <span class="grow"></span>
+    <nav class="foot-nav">
+      <a href="index.html#how">How it works</a>
+      <a href="pricing.html">Pricing</a>
+      <a href="/" target="_blank" rel="noopener">Launch app</a>
+    </nav>
+  </div>
+  <div class="wrap" style="margin-top:16px"><small>Built for open controllers · verify every program on your own machine before cutting.</small></div>
+</footer>
+
+</body>
+</html>

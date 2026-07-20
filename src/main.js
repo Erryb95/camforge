@@ -22,6 +22,7 @@ import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DX
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
 import { cutParamsFor, PLASMA_MATERIALS, materialEntries } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per lega+spessore
 import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
+import { isPro, activatePro, PRICING_URL } from './license.js';   // gating Free/Pro (export = Pro)
 import { MATERIALS, DEFAULT_MATERIAL, materialById, coatingColor } from './sim/materials.js';   // materiali + punta per materiale
 import { LaserTubeSim, outwardNormalAt } from './sim/lasertube.js';   // taglio LASER tubo (troncatura=stacco assiale)
 import { loadLaserHead, placeHead, placeHeadOriented, headScaleFor } from './sim/laserhead.js';
@@ -671,6 +672,7 @@ $('btnDemoRotary').addEventListener('click', () => {
   // materiale, pronto da caricare nella config (M190 P<numero>). Dato di mercato:
   // non esiste un database ufficiale, si compila a mano dai cut chart.
   $('rotaryMat').addEventListener('click', () => {
+    if (!requirePro('material file export')) return;
     const alloy = /** @type {HTMLSelectElement} */ ($('rAlloy'))?.value || 'mild_steel';
     const { text, count, alloy: label } = materialFileForAlloy(alloy);
     const fname = `${alloy}_material.cfg`;
@@ -743,6 +745,27 @@ $('btnDemoRotary').addEventListener('click', () => {
     }
   });
 })();
+// ---------- Free/Pro gating (l'export è Pro) ----------
+function openUpgrade() { $('upgradeDlg').hidden = false; }
+/** @returns {boolean} true se Pro; altrimenti apre l'upgrade e ritorna false */
+function requirePro(_feature) { if (isPro()) return true; openUpgrade(); return false; }
+function updateProBadge() {
+  const b = $('btnPro');
+  const pro = isPro();
+  b.innerHTML = pro ? '&#9889; Pro' : '&#9889; Upgrade';
+  b.classList.toggle('active', pro);
+}
+$('btnPro').addEventListener('click', openUpgrade);
+$('upgradeCancel').addEventListener('click', () => { $('upgradeDlg').hidden = true; });
+$('upgradeDlg').addEventListener('click', (e) => { if (e.target === $('upgradeDlg')) $('upgradeDlg').hidden = true; });
+$('upgradeBuy').addEventListener('click', () => window.open(PRICING_URL, '_blank'));
+$('upgradeActivate').addEventListener('click', () => {
+  const k = /** @type {HTMLInputElement} */ ($('proKeyInput')).value;
+  if (activatePro(k)) { updateProBadge(); $('upgradeDlg').hidden = true; toast('Pro activated — export unlocked ✓', true); }
+  else toast('Enter a valid license key');
+});
+updateProBadge();
+
 $('btnFit').addEventListener('click', () => viewer.fit());
 $('btnStock').addEventListener('click', () => setStockMode(!stockOn));
 
@@ -877,6 +900,7 @@ $('btnGenNc').addEventListener('click', async () => {
 
 $('btnDlNc').addEventListener('click', () => {
   if (!lastGen) return;
+  if (!requirePro('G-code export')) return;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([lastGen.text], { type: 'text/plain' }));
   a.download = lastGen.name;

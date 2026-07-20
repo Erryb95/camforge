@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing — LGE Rotary CAM</title>
+<meta name="description" content="Free to preview and simulate. Pro unlocks QtPlasmaC G-code and material-file export. Monthly or one-time.">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap nav">
+    <a class="brand" href="index.html"><span class="spark"></span> LGE&nbsp;Rotary&nbsp;CAM <small class="hide-sm">/ plasma tube</small></a>
+    <span class="grow"></span>
+    <a href="index.html#how" class="hide-sm">How it works</a>
+    <a href="index.html#features" class="hide-sm">Features</a>
+    <a href="pricing.html">Pricing</a>
+    <a class="btn ghost" href="/" target="_blank" rel="noopener">Launch app</a>
+  </div>
+</header>
+
+<main>
+  <section style="border-top:none">
+    <div class="wrap">
+      <div class="sec-head" style="text-align:center;margin-inline:auto">
+        <p class="eyebrow" style="justify-content:center">Pricing</p>
+        <h2>Try it free. Pay only to export.</h2>
+        <p style="margin-inline:auto">Preview, simulate and check every program for free. When you're ready to run it,
+          Pro unlocks unlimited G-code and material-file export — one tool, one shop, no seats math.</p>
+      </div>
+
+      <div style="display:flex;justify-content:center">
+        <div class="billing" id="billing">
+          <button data-plan="monthly" class="on">Monthly</button>
+          <button data-plan="lifetime">Lifetime</button>
+        </div>
+      </div>
+
+      <div class="tiers" style="margin-inline:auto">
+        <!-- FREE -->
+        <div class="tier">
+          <h3>Free</h3>
+          <div class="price"><b>$0</b><span>forever</span></div>
+          <p class="sub">Everything you need to evaluate the workflow on your own parts.</p>
+          <ul>
+            <li>Viewer + 3D / developed / simulation</li>
+            <li>Unroll → wrap preview (round &amp; rect)</li>
+            <li>Kerf, lead-in, torch-follow — all visible</li>
+            <li>On-screen G-code, synced to the 3D part</li>
+            <li>No account, runs in your browser</li>
+          </ul>
+          <a class="btn" href="/" target="_blank" rel="noopener">Open the app</a>
+        </div>
+
+        <!-- PRO -->
+        <div class="tier pro">
+          <span class="tier-badge">Pro</span>
+          <h3>Pro</h3>
+          <div class="price">
+            <b id="proPrice">$6</b><span id="proPer">/ month</span>
+          </div>
+          <p class="sub" id="proSub">Cancel anytime. Undercuts a commercial rotary seat by 3–4×.</p>
+          <ul>
+            <li>Unlimited <b>QtPlasmaC G-code</b> export</li>
+            <li>DXF / STEP → wrap, round &amp; rectangular tube</li>
+            <li>Kerf comp, lead-in/out, overburn, torch-follow Z</li>
+            <li>QtPlasmaC <b>material files</b> (5 real cut-chart alloys)</li>
+            <li>G93 inverse-time, tube-cut, shortest-path A</li>
+            <li>Updates &amp; new post features</li>
+          </ul>
+          <a class="btn primary" id="buyBtn" href="#" target="_blank" rel="noopener">Get Pro →</a>
+          <p class="pay-note">🔒 Secure checkout via Stripe · instant license key</p>
+        </div>
+      </div>
+
+      <p style="text-align:center;color:var(--muted);font-size:13.5px;max-width:40em;margin:34px auto 0">
+        After checkout you get a license key — paste it into the app (<b>⚡ Upgrade → Activate</b>) to unlock export.
+        Questions? The workflow is validated against the LinuxCNC PlasmaC community.
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer class="site">
+  <div class="wrap foot">
+    <a class="brand" href="index.html"><span class="spark"></span> LGE Rotary CAM</a>
+    <span class="grow"></span>
+    <nav class="foot-nav">
+      <a href="index.html">Home</a>
+      <a href="index.html#features">Features</a>
+      <a href="/" target="_blank" rel="noopener">Launch app</a>
+    </nav>
+  </div>
+  <div class="wrap" style="margin-top:16px"><small>Verify every program on your own machine before cutting.</small></div>
+</footer>
+
+<script>
+  // ----------------------------------------------------------------------------
+  // CHECKOUT — Stripe Payment Links (hosted checkout; card entry happens on
+  // Stripe, never on this page). REPLACE the two placeholder URLs below with your
+  // own Payment Links after creating them in the Stripe Dashboard:
+  //   Stripe → Payment links → New → recurring $6/mo  and  one-time $49
+  // Until then the button shows a "checkout not configured" notice.
+  const CHECKOUT = {
+    monthly:  "https://buy.stripe.com/REPLACE_WITH_YOUR_MONTHLY_LINK",
+    lifetime: "https://buy.stripe.com/REPLACE_WITH_YOUR_LIFETIME_LINK",
+  };
+  // ----------------------------------------------------------------------------
+  const PRICES = {
+    monthly:  { price: "$6",  per: "/ month",  sub: "Cancel anytime. Undercuts a commercial rotary seat by 3–4×." },
+    lifetime: { price: "$49", per: "one-time", sub: "Pay once, own it. Best value if you cut tube regularly." },
+  };
+  let plan = "monthly";
+  const $ = (id) => document.getElementById(id);
+  function render() {
+    const p = PRICES[plan];
+    $("proPrice").textContent = p.price;
+    $("proPer").textContent = p.per;
+    $("proSub").textContent = p.sub;
+    document.querySelectorAll("#billing button").forEach((b) => b.classList.toggle("on", b.dataset.plan === plan));
+  }
+  document.querySelectorAll("#billing button").forEach((b) =>
+    b.addEventListener("click", () => { plan = b.dataset.plan; render(); }));
+  $("buyBtn").addEventListener("click", (e) => {
+    const url = CHECKOUT[plan];
+    if (!url || url.includes("REPLACE_WITH")) {
+      e.preventDefault();
+      alert("Checkout isn't wired up yet.\n\nCreate a Stripe Payment Link and paste it into CHECKOUT in this page's script, then this button will open Stripe's secure checkout.");
+      return;
+    }
+    e.currentTarget.href = url;
+  });
+  render();
+</script>
+
+</body>
+</html>
