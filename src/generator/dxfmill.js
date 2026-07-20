@@ -46,12 +46,44 @@ function pointInRing([x, y], ring) {
 }
 
 /**
- * Anelli CHIUSI dai segmenti del DXF (per estremità coincidenti).
+ * RIPARAZIONE contorni: "welda" gli estremi vicini entro `tol` a un punto canonico
+ * (hash spaziale a celle `tol`), così i gap dei DXF reali si chiudono e i loop
+ * quasi-chiusi diventano chiusi. Come l'auto-close di SheetCam. Non muta il modello.
+ * @param {import('../core/model.js').Segment[]} segs @param {number} tol
+ * @returns {{segs:import('../core/model.js').Segment[], welded:number}}
+ */
+export function weldSegments(segs, tol) {
+  if (!(tol > 0)) return { segs, welded: 0 };
+  /** @type {Map<string, {x:number,y:number,z:number}[]>} */
+  const buckets = new Map();
+  let welded = 0;
+  const canon = (p) => {
+    const gx = Math.floor(p.x / tol), gy = Math.floor(p.y / tol);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const arr = buckets.get(`${gx + dx},${gy + dy}`);
+      if (arr) for (const q of arr) if (Math.hypot(q.x - p.x, q.y - p.y) <= tol) {
+        if (Math.hypot(q.x - p.x, q.y - p.y) > 1e-9) welded++;
+        return q;
+      }
+    }
+    const q = { x: p.x, y: p.y, z: 0 };
+    const k = `${gx},${gy}`;
+    (buckets.get(k) || buckets.set(k, []).get(k)).push(q);
+    return q;
+  };
+  return { segs: segs.map((s) => ({ ...s, from: canon(s.from), to: canon(s.to) })), welded };
+}
+
+/**
+ * Anelli CHIUSI dai segmenti del DXF (per estremità coincidenti). Ripara i gap
+ * entro `repairTol` (default 0.05 mm) → i DXF "sporchi" reali si chiudono comunque.
  * @param {import('../core/model.js').SceneModel} model
+ * @param {{repairTol?:number}} [opts]
  * @returns {number[][][]} lista di anelli [ [x,y], ... ]
  */
-export function closedRingsFromDxf(model) {
-  const segs = model.segments.filter((s) => s.type !== 'rapid' && s.from && s.to);
+export function closedRingsFromDxf(model, opts = {}) {
+  const raw = model.segments.filter((s) => s.type !== 'rapid' && s.from && s.to);
+  const segs = weldSegments(raw, opts.repairTol ?? 0.05).segs;
   const chains = chainSegments(segs);
   const rings = [];
   for (const c of chains) {
