@@ -1,6 +1,6 @@
 {
   "name": "camforge-desktop",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "CamForge desktop — browser CAD/CAM (fresatura, taglio, piega, rotary plasma) eseguibile offline.",
   "author": "CamForge",
