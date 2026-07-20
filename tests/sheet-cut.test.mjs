@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { sheetCutFromModel } from '../src/generator/sheetCut.js';
 import { planTabRuns } from '../src/generator/post/sheetplasmac.js';
+import { pocketRings } from '../src/generator/pocket.js';
 import { parseDXF } from '../src/loaders/dxf/parser.js';
 import { parseNC } from '../src/loaders/nc/parser.js';
 import { materialNumber } from '../src/generator/plasmacMaterial.js';
@@ -89,6 +90,30 @@ test('sheetCut: regola fori piccoli — feed ridotto sotto soglia Ø', async () 
   assert.ok(info.includes('fori piccoli'), info);
   assert.ok(new RegExp(`\\bF${Math.round(feed * 0.5)}\\b`).test(gcode), 'feed ridotto sui fori');
   assert.ok(new RegExp(`\\bF${feed}\\b`).test(gcode), 'feed pieno sul perimetro');
+});
+
+test('sheetCut: operazione ENGRAVE — scribe QtPlasmaC (M03 $1), on-line, niente pierce', async () => {
+  const { gcode, info } = await sheetCutFromModel(dxf(), { thickness: 3, dialect: 'qtplasmac', operation: 'engrave' });
+  assert.ok(/^M03 \$1 S1$/m.test(gcode), 'usa lo scribe (tool $1)');
+  assert.ok(/^M05 \$1$/m.test(gcode));
+  assert.ok(!/^M03 \$0 S1$/m.test(gcode), 'niente torcia da taglio $0');
+  assert.ok(!/^G4 /m.test(gcode), 'niente pierce nella marcatura');
+  assert.ok(info.includes('marcatura'));
+});
+
+test('sheetCut: operazione POCKET — passate concentriche (riuso offsetClosed)', async () => {
+  const { gcode, cam, info } = await sheetCutFromModel(dxf(), { thickness: 3, dialect: 'grbl', operation: 'pocket', kerf: 4, stepover: 3 });
+  assert.ok(cam.contours.length > 5, `molte passate concentriche, ottenute ${cam.contours.length}`);
+  assert.ok(/^M3 S\d+$/m.test(gcode) && /^G1 X/m.test(gcode));
+  assert.ok(info.includes('pocket'));
+});
+
+test('pocketRings: riempie un quadrato con anelli concentrici via via più interni', async () => {
+  const sq = [{ pts: [{ u: 0, v: 0 }, { u: 100, v: 0 }, { u: 100, v: 100 }, { u: 0, v: 100 }, { u: 0, v: 0 }] }];
+  const rings = await pocketRings(sq, { tool: 5, stepover: 4, finish: 2.5 });
+  assert.ok(rings.length > 5, `attesi molti anelli, ottenuti ${rings.length}`);
+  const w = (r) => Math.max(...r.map((p) => p.u)) - Math.min(...r.map((p) => p.u));
+  assert.ok(w(rings[0]) > w(rings[rings.length - 1]), 'gli anelli rimpiccioliscono verso il centro');
 });
 
 test('sheetCut: nessun contorno chiuso → errore chiaro', async () => {

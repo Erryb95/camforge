@@ -10,6 +10,7 @@ import { applyKerfAndLeads, cutParamsFor, materialEntries } from './rotaryCut.js
 import { materialNumber } from './plasmacMaterial.js';
 import { postSheetCut } from './post/sheetplasmac.js';
 import { nestGrid } from './nest.js';
+import { pocketRings } from './pocket.js';
 
 /**
  * @param {import('../core/model.js').SceneModel} model  disegno 2D (DXF o STEP/IGES planare)
@@ -47,13 +48,29 @@ export async function sheetCutFromModel(model, opts = {}) {
   // material file QtPlasmaC solo per il dialetto QtPlasmaC; grbl/laser non usa M190
   const material = dialect === 'qtplasmac' ? (opts.material ?? materialNumber(materialKey, thickness)) : null;
 
-  const cam = await applyKerfAndLeads(contours, {
-    kerf,
-    lead: opts.lead ?? 'arc',
-    leadLen: opts.leadLen ?? Math.max(2, kerf * 2),
-    overcut: opts.overcut ?? 0,
-    topology,                             // 'sheet' (o forzato 'sheet' se nesting)
-  });
+  const operation = opts.operation ?? 'cut';   // cut | engrave | pocket
+  /** @type {{contours:any[], holes:number, sheet:boolean, skipped:number}} */
+  let cam;
+  if (operation === 'pocket') {
+    // POCKET: passate concentriche che svuotano l'area (riuso offsetClosed). v1: usa
+    // il contorno più ESTERNO (area max) come confine; le isole/fori sono fase futura.
+    const tool = kerf > 0 ? kerf : 1;
+    const area = (c) => { let a = 0; const p = c.pts; for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += p[j].u * p[i].v - p[i].u * p[j].v; return Math.abs(a); };
+    const boundary = contours.reduce((m, c) => (area(c) > area(m) ? c : m), contours[0]);
+    const rings = await pocketRings([boundary], { tool, stepover: opts.stepover, finish: tool / 2 });
+    if (!rings.length) throw new Error('area troppo piccola per lo svuotamento (pocket) con questo utensile');
+    const camC = rings.map((r, i) => ({ pts: r.concat([{ ...r[0] }]), lead: [], tag: `pocket ${i + 1}`, hole: false, depth: 0 }));
+    cam = { contours: camC, holes: 0, sheet: false, skipped: 0 };
+  } else {
+    const engrave = operation === 'engrave';   // marcatura ON-LINE: niente kerf, niente lead
+    cam = await applyKerfAndLeads(contours, {
+      kerf: engrave ? 0 : kerf,
+      lead: engrave ? 'none' : (opts.lead ?? 'arc'),
+      leadLen: opts.leadLen ?? Math.max(2, kerf * 2),
+      overcut: engrave ? 0 : (opts.overcut ?? 0),
+      topology,                             // 'sheet' (o forzato 'sheet' se nesting)
+    });
+  }
 
   // REGOLA PLASMA: rallenta i FORI PICCOLI. Ad alta velocità l'arco "lagga" e il
   // foro esce ovale/sottodimensionato → sotto una certa Ø si taglia più piano.
@@ -73,8 +90,9 @@ export async function sheetCutFromModel(model, opts = {}) {
     dialect, feed, thickness, power: opts.power,
     pierceMs: opts.pierceMs ?? preset.pierce * 1000,
     material,
-    tabCount: opts.tabCount ?? 0,
+    tabCount: operation === 'cut' ? (opts.tabCount ?? 0) : 0,   // tab solo nel taglio passante
     tabLen: opts.tabLen ?? 3,
+    engrave: operation === 'engrave',
     name: opts.name,
   });
 
@@ -84,9 +102,10 @@ export async function sheetCutFromModel(model, opts = {}) {
     if (p.u < uMin) uMin = p.u; if (p.u > uMax) uMax = p.u;
     if (p.v < vMin) vMin = p.v; if (p.v > vMax) vMax = p.v;
   }
-  const name = opts.name || (model.name || 'lamiera').replace(/\.[^.]+$/, '') + '.cut.ngc';
-  let info = `${cam.contours.length} tagli (${cam.holes} fori · ${cam.sheet ? 'ritaglio sagoma' : 'fori'}) · `
-    + `${(uMax - uMin).toFixed(0)}×${(vMax - vMin).toFixed(0)} mm · ${materialKey} ${thickness} mm · kerf ${kerf} mm · feed ${feed} mm/min`;
+  const opName = operation === 'pocket' ? 'pocket' : operation === 'engrave' ? 'marcatura' : 'taglio';
+  const name = opts.name || (model.name || 'lamiera').replace(/\.[^.]+$/, '') + (operation === 'engrave' ? '.mark.ngc' : operation === 'pocket' ? '.pocket.ngc' : '.cut.ngc');
+  let info = `${opName}: ${cam.contours.length} ${operation === 'pocket' ? 'passate' : 'contorni'}${operation === 'cut' ? ` (${cam.holes} fori · ${cam.sheet ? 'ritaglio sagoma' : 'fori'})` : ''} · `
+    + `${(uMax - uMin).toFixed(0)}×${(vMax - vMin).toFixed(0)} mm · ${materialKey} ${thickness} mm${operation === 'cut' ? ` · kerf ${kerf} mm` : ''} · feed ${feed} mm/min`;
   if (opts.tabCount) info += ` · ${opts.tabCount} tab/pezzo (${opts.tabLen ?? 3} mm)`;
   if (slowed) info += ` · ${slowed} fori piccoli @ ${Math.round(smallHoleFactor * 100)}%`;
   info += nestInfo;

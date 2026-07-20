@@ -131,7 +131,12 @@ export function postSheetCut(cam, opts = {}) {
   const material = opts.material === undefined ? 0 : opts.material;
   const tabCount = opts.tabCount ?? 0;
   const tabLen = opts.tabLen ?? 3;
-  const pierceS = opts.pierceMs !== undefined ? opts.pierceMs / 1000 : Math.max(0.3, 0.07 * (opts.thickness ?? 2));
+  const engrave = !!opts.engrave;             // marcatura/scribe on-line (no taglio passante)
+  const pierceS = engrave ? 0 : (opts.pierceMs !== undefined ? opts.pierceMs / 1000 : Math.max(0.3, 0.07 * (opts.thickness ?? 2)));
+  // QtPlasmaC ha lo SCRIBE come tool #1 (M03 $1): usato per marcare senza tagliare.
+  const scribe = engrave && (opts.dialect || 'qtplasmac') === 'qtplasmac';
+  const onCodes = scribe ? ['M03 $1 S1'] : d.on(power);
+  const offCodes = scribe ? ['M05 $1'] : d.off();
   const xy = (p) => ({ x: p.u, y: p.v });
 
   /** @type {string[]} */ const L = [];
@@ -152,7 +157,7 @@ export function postSheetCut(cam, opts = {}) {
     const first = runs[0];
     const entry = lead.length ? lead[0] : first[0];
     L.push(`G0 X${f(entry.x)} Y${f(entry.y)}`);
-    L.push(...d.on(power));
+    L.push(...onCodes);
     L.push(...d.pierce(pierceS));
     let feededOnce = false;
     const g1 = (p) => { L.push(`G1 X${f(p.x)} Y${f(p.y)}${feededOnce ? '' : ` F${f(cf)}`}`); feededOnce = true; };
@@ -160,15 +165,15 @@ export function postSheetCut(cam, opts = {}) {
     for (let k = (lead.length ? 1 : 0); k < first.length; k++) g1(first[k]);
     // run successivi: tab = torcia OFF, rapido oltre il ponticello, riaccendi
     for (let r = 1; r < runs.length; r++) {
-      L.push(...d.off());
+      L.push(...offCodes);
       const run = runs[r];
       L.push(`G0 X${f(run[0].x)} Y${f(run[0].y)}`);
-      L.push(...d.on(power));
+      L.push(...onCodes);
       L.push(...d.pierce(pierceS));
       feededOnce = false;
       for (let k = 1; k < run.length; k++) g1(run[k]);
     }
-    L.push(...d.off());
+    L.push(...offCodes);
   });
 
   L.push(...d.postamble);

@@ -721,6 +721,8 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
     const src = sheetSrc;
     try {
       const { gcode, name, info } = await sheetCutFromModel(src, {
+        operation: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sOperation')).value),
+        stepover: parseFloat(/** @type {HTMLInputElement} */ ($('sStepover')).value) || 2,
         dialect: /** @type {HTMLSelectElement} */ ($('sDialect')).value,
         materialKey: alloySel.value,
         thickness: parseFloat(mat.value),
