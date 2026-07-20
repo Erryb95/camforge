@@ -206,8 +206,11 @@
         <option value="cut" selected>Taglio passante</option>
         <option value="engrave">Marcatura / incisione (on-line, scribe)</option>
         <option value="pocket">Pocket / svuotamento area</option>
+        <option value="text">Testo / marcatura (Hershey)</option>
       </select></label>
       <label>Stepover pocket (mm)<input type="number" id="sStepover" min="0.1" step="0.1" value="2"></label>
+      <label>Testo (marcatura)<input type="text" id="sText" placeholder="es. CAM-001" value=""></label>
+      <label>Altezza testo (mm)<input type="number" id="sTextSize" min="1" step="1" value="15"></label>
       <label>Controller / post<select id="sDialect">
         <option value="qtplasmac" selected>QtPlasmaC (LinuxCNC)</option>
         <option value="linuxcnc">LinuxCNC / plasma generico</option>

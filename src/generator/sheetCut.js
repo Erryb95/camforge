@@ -11,6 +11,7 @@ import { materialNumber } from './plasmacMaterial.js';
 import { postSheetCut } from './post/sheetplasmac.js';
 import { nestGrid } from './nest.js';
 import { pocketRings } from './pocket.js';
+import { textToPolylines } from './text.js';
 
 /**
  * @param {import('../core/model.js').SceneModel} model  disegno 2D (DXF o STEP/IGES planare)
@@ -111,5 +112,28 @@ export async function sheetCutFromModel(model, opts = {}) {
   info += nestInfo;
   if (cam.skipped) info += ` · ⚠ ${cam.skipped} contorni < kerf saltati`;
 
+  return { gcode: post.text, lines: post.lines, name, info, cam };
+}
+
+/**
+ * Incisione TESTO single-line (Hershey futural) → G-code marcatura/scribe. Non serve
+ * un modello: il testo è generato dai font vettoriali vendorizzati.
+ * @param {string} text
+ * @param {{size?:number, x?:number, y?:number, dialect?:'qtplasmac'|'grbl'|'linuxcnc'|'mach3'|'mach4'|'uccnc',
+ *   feed?:number, power?:number, materialKey?:string, thickness?:number, material?:number|null, name?:string}} [opts]
+ * @returns {{gcode:string, lines:string[], name:string, info:string, cam:any}}
+ */
+export function sheetTextGcode(text, opts = {}) {
+  const t = textToPolylines(text || '', { size: opts.size ?? 20, x: opts.x ?? 0, y: opts.y ?? 0 });
+  if (!t.polylines.length) throw new Error('testo vuoto o caratteri non supportati');
+  const cam = {
+    contours: t.polylines.map((pl, i) => ({ pts: pl, lead: [], tag: `text ${i + 1}`, hole: false, depth: 0 })),
+    holes: 0, sheet: false, skipped: 0,
+  };
+  const dialect = opts.dialect || 'qtplasmac';
+  const material = dialect === 'qtplasmac' ? (opts.material ?? materialNumber(opts.materialKey || 'mild_steel', opts.thickness ?? 2)) : null;
+  const name = opts.name || `testo.mark.ngc`;
+  const post = postSheetCut(cam, { dialect, feed: opts.feed ?? 3000, power: opts.power, material, engrave: true, name });
+  const info = `marcatura testo "${text}" · ${t.width.toFixed(0)}×${t.height.toFixed(0)} mm · ${t.polylines.length} tratti · ${dialect}`;
   return { gcode: post.text, lines: post.lines, name, info, cam };
 }

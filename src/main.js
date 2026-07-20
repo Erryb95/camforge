@@ -22,7 +22,7 @@ import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pez
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
 import { copeToRotary } from './generator/coping.js';  // coping/fish-mouth tubo-tubo → wrap asse A → G-code QtPlasmaC
-import { sheetCutFromModel } from './generator/sheetCut.js';  // CAM taglio lamiera PIATTA: DXF → kerf/lead/tabs → G-code plasma/laser
+import { sheetCutFromModel, sheetTextGcode } from './generator/sheetCut.js';  // CAM taglio lamiera PIATTA + incisione testo
 import { cutParamsFor, PLASMA_MATERIALS, materialEntries } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per lega+spessore
 import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
 import { isPro, activatePro, PRICING_URL } from './license.js';   // gating Free/Pro (export = Pro)
@@ -720,8 +720,16 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
     if (!sheetSrc) return;
     const src = sheetSrc;
     try {
-      const { gcode, name, info } = await sheetCutFromModel(src, {
-        operation: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sOperation')).value),
+      const operation = /** @type {HTMLSelectElement} */ ($('sOperation')).value;
+      const { gcode, name, info } = operation === 'text'
+        ? sheetTextGcode(/** @type {HTMLInputElement} */ ($('sText')).value || 'TEXT', {
+            size: parseFloat(/** @type {HTMLInputElement} */ ($('sTextSize')).value) || 15,
+            dialect: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sDialect')).value),
+            materialKey: alloySel.value, thickness: parseFloat(mat.value),
+            feed: parseFloat(/** @type {HTMLInputElement} */ ($('sFeed')).value) || 3000,
+          })
+        : await sheetCutFromModel(src, {
+        operation: /** @type {any} */ (operation),
         stepover: parseFloat(/** @type {HTMLInputElement} */ ($('sStepover')).value) || 2,
         dialect: /** @type {HTMLSelectElement} */ ($('sDialect')).value,
         materialKey: alloySel.value,
