@@ -21,6 +21,7 @@ import { partToMillGcode } from './generator/partmill.js';   // FRESATURA da pez
 import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DXF 2D: contorni → lastra estrusa
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
 import { copeToRotary } from './generator/coping.js';  // coping/fish-mouth tubo-tubo → wrap asse A → G-code QtPlasmaC
+import { sheetCutFromModel } from './generator/sheetCut.js';  // CAM taglio lamiera PIATTA: DXF → kerf/lead/tabs → G-code plasma/laser
 import { cutParamsFor, PLASMA_MATERIALS, materialEntries } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per lega+spessore
 import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
 import { isPro, activatePro, PRICING_URL } from './license.js';   // gating Free/Pro (export = Pro)
@@ -38,6 +39,7 @@ let lineToSegs = new Map();
 let lastStep = /** @type {{name:string, text:string}|null} */ (null);   // sorgente per "→ NC"
 let lastGen = /** @type {{name:string, text:string}|null} */ (null);    // ultimo NC generato
 let rotarySrc = /** @type {import('./core/model.js').SceneModel|null} */ (null);   // DXF sorgente per il wrap rotary (persiste dopo il wrap)
+let sheetSrc = /** @type {import('./core/model.js').SceneModel|null} */ (null);    // DXF sorgente per il taglio lamiera piatta (persiste dopo la generazione)
 // simulazione asportazione materiale (Z-map)
 let matSim = /** @type {MaterialSim5|null} */ (null);
 let stockOn = false;
@@ -127,6 +129,7 @@ async function loadText(fileName, text) {
   try {
     const t0 = performance.now();
     rotarySrc = null;                 // nuovo file caricato: dimentica il DXF sorgente del wrap
+    sheetSrc = null;                  // idem per il taglio lamiera
     const res = parseFile(fileName, text);
     if (res.model && typeof (/** @type {any} */ (res.model)).then === 'function') {
       toast('Caricamento motore geometrico (WASM)…', true);
@@ -179,6 +182,9 @@ function displayModel(m, fileName, opts = {}) {
     // pannello resta usabile per ri-tarare i parametri anche dopo il wrap (QTPLASMAC)
     if (isRotaryWrappable(m)) rotarySrc = m;
     $('btnDxfRotary').hidden = !rotarySrc;
+    // → Taglio lamiera: stessa sorgente 2D (DXF o STEP/IGES planare)
+    if (isRotaryWrappable(m)) sheetSrc = m;
+    $('btnSheetCut').hidden = !sheetSrc;
 
     // simulazione asportazione: azzera e mostra i bottoni in base al contenuto
     stockOn = false; matSim = null;
@@ -671,6 +677,73 @@ $('btnCoping').addEventListener('click', () => { $('copeDlg').hidden = false; })
     } catch (err) {
       console.error(err);
       toast(`Coping fallito: ${/** @type {Error} */(err).message}`);
+    }
+  });
+})();
+
+// TAGLIO LAMIERA PIATTA: DXF → kerf compensation + lead-in/out + tab/ponticelli →
+// G-code plasma/laser (QtPlasmaC/LinuxCNC/GRBL). Il G-code è X/Y standard ⇒ viene
+// PARSATO dal loader NC (loadText) e simulato come un file caricato — niente modello ad hoc.
+$('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').hidden = false; });
+(function initSheetDlg() {
+  const dlg = $('sheetDlg');
+  const alloySel = /** @type {HTMLSelectElement} */ ($('sAlloy'));
+  const mat = /** @type {HTMLSelectElement} */ ($('sMat'));
+  alloySel.innerHTML = Object.values(PLASMA_MATERIALS).map((a) => `<option value="${a.key}">${a.label}</option>`).join('');
+  const applyPreset = () => {
+    const p = cutParamsFor(parseFloat(mat.value), materialEntries(alloySel.value));
+    /** @type {HTMLInputElement} */ ($('sKerf')).value = String(p.kerf);
+    /** @type {HTMLInputElement} */ ($('sFeed')).value = String(p.feed);
+  };
+  const rebuildThickness = () => {
+    mat.innerHTML = materialEntries(alloySel.value).map((p) => `<option value="${p.t}">${p.t} mm (${p.amps}A)</option>`).join('');
+    applyPreset();
+  };
+  alloySel.addEventListener('change', rebuildThickness);
+  mat.addEventListener('change', applyPreset);
+  rebuildThickness();
+
+  $('sheetMat').addEventListener('click', () => {
+    if (!requirePro('material file export')) return;
+    const alloy = alloySel.value;
+    const { text, count, alloy: label } = materialFileForAlloy(alloy);
+    const fname = `${alloy}_material.cfg`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = fname; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(`Material file QtPlasmaC: ${count} materiali (${label}) → ${fname}`, true);
+  });
+  $('sheetCancel').addEventListener('click', () => { dlg.hidden = true; });
+  $('sheetGo').addEventListener('click', async () => {
+    if (!sheetSrc) return;
+    const src = sheetSrc;
+    try {
+      const { gcode, name, info } = await sheetCutFromModel(src, {
+        dialect: /** @type {HTMLSelectElement} */ ($('sDialect')).value,
+        materialKey: alloySel.value,
+        thickness: parseFloat(mat.value),
+        kerf: parseFloat(/** @type {HTMLInputElement} */ ($('sKerf')).value),
+        feed: parseFloat(/** @type {HTMLInputElement} */ ($('sFeed')).value),
+        lead: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sLead')).value),
+        leadLen: parseFloat(/** @type {HTMLInputElement} */ ($('sLeadLen')).value),
+        overcut: parseFloat(/** @type {HTMLInputElement} */ ($('sOvercut')).value) || 0,
+        tabCount: parseInt(/** @type {HTMLInputElement} */ ($('sTabCount')).value, 10) || 0,
+        tabLen: parseFloat(/** @type {HTMLInputElement} */ ($('sTabLen')).value) || 3,
+        topology: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sTopo')).value),
+      });
+      dlg.hidden = true;
+      await loadText(name, gcode);          // parse NC + display → simulazione del percorso
+      lastGen = { name, text: gcode };
+      lastStep = null;
+      $('btnGenNc').hidden = true;
+      $('btnDlNc').hidden = false;
+      sheetSrc = src;                       // ripristina la sorgente per ri-generare con altri parametri
+      $('btnSheetCut').hidden = false;
+      toast(`Taglio lamiera: ${info} — ▶ simula, ⬇ NC per scaricarlo`, true);
+    } catch (err) {
+      console.error(err);
+      toast(`Taglio lamiera fallito: ${/** @type {Error} */(err).message}`);
     }
   });
 })();

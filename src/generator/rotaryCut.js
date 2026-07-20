@@ -292,7 +292,7 @@ export async function applyKerfAndLeads(contours, opts = {}) {
       const t = norm(ring[1].u - ring[0].u, ring[1].v - ring[0].v);
       pts.push({ u: ring[0].u + t.x * overcut, v: ring[0].v + t.y * overcut });
     }
-    out.push({ pts, lead, tag: it.tag });
+    out.push({ pts, lead, tag: it.tag, hole: it.hole, depth: it.depth });
   }
   return { contours: out, skipped, holes, sheet };
 }

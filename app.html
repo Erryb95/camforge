@@ -15,6 +15,7 @@
   <button id="btnDemo" title="Carica il programma dimostrativo">Demo</button>
   <button id="btnDemoRotary" title="DEMO CAM tubo/rotary: avvolge un pattern sullo svolto del tubo, genera G-code QtPlasmaC (X asse tubo, A rotazione) e simula il taglio &mdash; &#11015; NC per scaricarlo">&#127744; Tubo rotary</button>
   <button id="btnCoping" title="Coping / fish-mouth: intaglio di un tubo (branch) che si innesta su un altro (main). Genera il G-code QtPlasmaC e simula l'avvolgimento sul tubo.">&#9707; Coping tubo</button>
+  <button id="btnSheetCut" hidden title="Taglio lamiera PIATTA: da un DXF genera il G-code plasma/laser con kerf compensation, lead-in/out e tab/ponticelli. Simula il percorso.">&#9636; Taglio lamiera</button>
   <span class="sep"></span>
   <div class="seg-btns" id="viewBtns" title="Piano di vista">
     <button data-v="XY" class="active">XY</button>
@@ -192,6 +193,43 @@
     <div class="modal-actions">
       <button id="copeCancel">Annulla</button>
       <button id="copeGo" class="primary">&#11015; Genera coping QtPlasmaC</button>
+    </div>
+  </div>
+</div>
+
+<div id="sheetDlg" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">&#9636; Taglio lamiera piatta (plasma / laser)</div>
+    <div id="sheetInfo" class="modal-info">Da un DXF: <b>kerf compensation</b> (il finito resta in quota), <b>lead-in/out</b> dal lato sfrido, <b>tab/ponticelli</b> per tenere i pezzi nel grezzo, ordine di taglio interni-prima. G-code plasma/laser.</div>
+    <div class="modal-grid">
+      <label>Controller / post<select id="sDialect">
+        <option value="qtplasmac" selected>QtPlasmaC (LinuxCNC)</option>
+        <option value="linuxcnc">LinuxCNC / plasma generico</option>
+        <option value="grbl">GRBL (laser/plasma)</option>
+      </select></label>
+      <label>Materiale<select id="sAlloy"></select></label>
+      <label>Spessore<select id="sMat"></select></label>
+      <label>Kerf (mm)<input type="number" id="sKerf" min="0" step="0.1"></label>
+      <label>Feed (mm/min)<input type="number" id="sFeed" min="1" step="10"></label>
+      <label>Lead-in<select id="sLead">
+        <option value="arc" selected>arco</option>
+        <option value="line">linea</option>
+        <option value="none">nessuno</option>
+      </select></label>
+      <label>Lead-in (mm)<input type="number" id="sLeadLen" min="0" step="0.5" value="3"></label>
+      <label>Overcut fori (mm)<input type="number" id="sOvercut" min="0" step="0.5" value="0"></label>
+      <label>Tab per pezzo<input type="number" id="sTabCount" min="0" step="1" value="4"></label>
+      <label>Lunghezza tab (mm)<input type="number" id="sTabLen" min="0" step="0.5" value="3"></label>
+      <label>Topologia<select id="sTopo">
+        <option value="sheet" selected>ritaglia sagoma (perimetro + fori)</option>
+        <option value="tube">solo fori</option>
+        <option value="auto">auto</option>
+      </select></label>
+    </div>
+    <div class="modal-actions">
+      <button id="sheetCancel">Annulla</button>
+      <button id="sheetMat" title="Scarica il material file QtPlasmaC (kerf/feed/pierce/altezze) per la tua config">&#11015; Material file</button>
+      <button id="sheetGo" class="primary">&#11015; Genera taglio lamiera</button>
     </div>
   </div>
 </div>
