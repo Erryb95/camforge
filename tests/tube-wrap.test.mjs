@@ -38,19 +38,21 @@ test('circleUV / obroundUV: contorni chiusi coerenti', () => {
   near(vSpan, 12, 1e-6);                              // larghezza = width
 });
 
-test('postRotaryPlasmaC: struttura QtPlasmaC (X/A, tube-cut, M03 $0 S1/M05 $0, pierce)', () => {
+test('postRotaryPlasmaC: struttura QtPlasmaC-nativa (keep-z-motion, M03 $0 S1/M05 $0, M190+M66, no G04)', () => {
   const tube = { diameter: 60, length: 300 };
   const contours = [circleUV(60, 0, 7), circleUV(120, 47, 5)].map((pts) => ({ pts }));
   const { text, lines, moves } = postRotaryPlasmaC(contours, tube, { feed: 2000, thickness: 2, material: 0 });
   assert.ok(text.includes('G21'));
-  assert.ok(text.includes('#<tube-cut>=1'));
+  assert.ok(text.includes('#<keep-z-motion>=1'), 'magic comment NATIVO QtPlasmaC: salta il probe sul tubo');
+  assert.ok(!text.includes('#<tube-cut>'), 'niente #<tube-cut> (artefatto SheetCam che QtPlasmaC ignora)');
   assert.ok(text.includes('M190 P0'));
-  assert.ok(text.endsWith('M30\n'));
+  assert.ok(/^M66 P3 L3 Q1$/m.test(text), 'attesa conferma cambio materiale (Automatic Material Handling)');
+  assert.ok(text.endsWith('M2\n'));
   const m03 = (text.match(/^M03 \$0 S1$/gm) || []).length;
   const m05 = (text.match(/^M05 \$0$/gm) || []).length;
   assert.equal(m03, 2, 'un accensione torcia per contorno');
   assert.ok(m05 >= 3, 'spegnimento per contorno + postamble');
-  assert.ok(/^G04 P/m.test(text), 'pierce delay presente');
+  assert.ok(!/^G04/m.test(text), 'niente G04: il pierce delay lo gestisce QtPlasmaC via M190 (emetterlo lo raddoppierebbe)');
   // ogni riga di moto è X…A…; e i moves puntano a righe reali coerenti
   assert.ok(moves.length > 0);
   const wrap180 = (d) => ((d % 360) + 540) % 360 - 180;
@@ -69,6 +71,7 @@ test('postRotaryPlasmaC: struttura QtPlasmaC (X/A, tube-cut, M03 $0 S1/M05 $0, p
 test('postRotaryPlasmaC: material null omette M190', () => {
   const { text } = postRotaryPlasmaC([{ pts: circleUV(0, 0, 5) }], { diameter: 40, length: 100 }, { material: null });
   assert.ok(!text.includes('M190'));
+  assert.ok(!text.includes('M66'), 'senza materiale selezionato, niente M66');
 });
 
 test('generateRotaryDemo: modello avvolto coerente + sync seg.line ↔ G-code', () => {
@@ -174,11 +177,11 @@ test('wrapDxfToRotary: DXF → QtPlasmaC + modello avvolto (Ø = un giro) + kerf
   const { model, gcode, name, tube, info } = await wrapDxfToRotary(m0, { diameter: D, thickness: 4 });
   assert.ok(name.endsWith('.ngc') && name.includes('rotary'));
   assert.equal(tube.diameter, D);
-  assert.ok(gcode.includes('#<tube-cut>=1') && /^M03 \$0 S1$/m.test(gcode));
+  assert.ok(gcode.includes('#<keep-z-motion>=1') && /^M03 \$0 S1$/m.test(gcode));
   assert.ok(model.segments.length > 20 && model.mesh.indices.length > 0);
   assert.equal(model.meta.unrollAvailable, true);
   assert.ok(info.includes('kerf 1.4 mm') && info.includes('feed 4220'), info);   // preset Hypertherm acciaio 4 mm
-  assert.ok(gcode.includes('G04 P0.1'), 'pierce dal preset (4 mm → 0.1 s)');
+  assert.ok(/^M66 P3 L3 Q1$/m.test(gcode) && !/^G04/m.test(gcode), 'materiale QtPlasmaC (M190+M66) + niente G04 manuale');
   assert.ok(!info.includes('sovrappone'), info);
   const R = D / 2;
   for (const s of model.segments) for (const p of s.pts) near(Math.hypot(p.y, p.z), R, 1e-6);
@@ -239,7 +242,8 @@ test('post follow: G0 di retract a Z sicura (> raggio max) + nessun G1 senza F (
   const rt = { shape: 'rect', width: 40, height: 40, length: 100 };
   const { text } = postRotaryPlasmaC([{ pts: circleUV(20, 10, 4).map((p) => ({ u: p.u, v: p.v })) }], rt, { follow: true });
   const zs = [...text.matchAll(/G0 Z([\d.]+)/g)].map((m) => +m[1]);
-  const safe = Math.hypot(20, 20) + 1.5 + 10;            // maxRadial + cutHeight + clearance
+  const cutH = 1.5, pierceH = cutH + 2;                  // default pierceHeight = cutHeight + 2
+  const safe = Math.hypot(20, 20) + Math.max(pierceH, cutH) + 10;   // maxRadial + max(pierce,cut) + clearance
   assert.ok(zs.some((z) => Math.abs(z - safe) < 1e-3), 'retract a Z sicura presente');
   assert.equal(text.split('\n').filter((l) => /^G1 /.test(l) && !/ F/.test(l)).length, 0, 'ogni G1 ha F in G93');
 });

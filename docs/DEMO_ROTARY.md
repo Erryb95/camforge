@@ -34,23 +34,28 @@ Test: `tests/tube-wrap.test.mjs` (7 test: matematica wrap, round-trip, struttura
 QtPlasmaC, coerenza modello e sync). Sample committato:
 `samples/generated/rotary-demo-qtplasmac.ngc`.
 
-## Convenzioni QtPlasmaC emesse
-Verificate sul file reale `samples/cut/plasma_pipe.ngc` (post *PlasmaRotary PlasmaC.scpost*):
+## Convenzioni QtPlasmaC emesse — modalità NATIVA turnkey
+Verificate su **fonti primarie** (manuale QtPlasmaC `linuxcnc.org/docs/html/plasma/qtplasmac.html`
++ sorgente `qtplasmac.adoc`), non su un post SheetCam. È la differenza che rende il file
+"pronto a tagliare" senza editare il post:
 
 | Elemento | Uso |
 |---|---|
-| `G21` | unità mm |
-| `#<tube-cut>=1` | modalità taglio tubo (QtPlasmaC gestisce THC/altezza) |
-| `M190 P0` | selezione materiale (opzionale) |
-| `M03 $0 S1` | torcia ON (arco/materiale corrente) |
-| `G04 P<s>` | pierce delay (dwell) prima del taglio |
-| `M05 $0` | torcia OFF |
-| `X` / `A` | X = asse tubo (mm) · A = rotazione tubo (gradi) |
+| `G21 G40 G49 G64 P0.1 G80 G90 G92.1 G97` | preambolo sicuro raccomandato dal manuale |
+| `#<keep-z-motion>=1` | **NATIVO**: QtPlasmaC non forza il proprio Z/probe → il file pilota Z. Salta il touch-off (inaffidabile sul tubo tondo rotante) senza hack. *(Il `#<tube-cut>` dei post SheetCam è un nome che QtPlasmaC **ignora**: non salta nulla.)* |
+| `M190 P<n>` + `M66 P3 L3 Q1` | selezione materiale + attesa conferma cambio (Automatic Material Handling) |
+| `M03 $0 S1` / `M05 $0` | torcia ON/OFF. QtPlasmaC gestisce **arco, arc-OK e pierce delay** dalla tabella materiale ⇒ **niente `G04` a mano** (lo raddoppierebbe). *(`$3` non esiste: spindle validi solo `$0`/`$1`/`$2`.)* |
+| `G93` … `G94` | feed **inverse-time**: velocità di superficie corretta su moti X/A/misti |
+| `X` / `A` (/ `Z`) | X = asse tubo (mm) · A = rotazione (gradi) · Z (solo follow) = standoff |
+| `M2` | fine programma |
 
-**Nota scope**: la demo usa il **rotary semplice a torcia fissa** (nessun moto Z, THC
-off) — la forma più chiara e robusta per validare, e proprio ciò che oggi è scomodo da
-ottenere. Il post "torcia che segue il profilo" (X/Y/Z/A del file reale) è una possibile
-estensione successiva.
+**THC off** (enable indipendente dallo spindle) e **nessuna subroutine `o<touchoff>`** (assente
+in QtPlasmaC → errore): sono proprio i due punti su cui i post SheetCam/generici inciampano.
+
+**Nota scope**: default = **rotary tondo a torcia fissa** (nessun moto Z; il file lascia la Z
+alla config macchina), la forma più robusta. Il **tubo rettangolare** usa la *torcia che segue*
+(Z variabile). **Limite fisico noto** (non risolvibile in CAM): sul rotary "wrapped" il
+look-ahead di LinuxCNC può cappare la velocità rotativa negli spigoli ad alte velocità.
 
 ## Come riprodurla in locale
 ```
@@ -82,13 +87,15 @@ punto 3D sul tubo: φ = v/R ; { x:u, y:R·sinφ, z:R·cosφ }  (v=0 al centro fa
 > Hi all — I'm prototyping a small, zero-install web tool for **rotary/tube plasma on
 > open controllers**. It takes a design on the *unrolled* tube (u = axial mm, v =
 > circumferential mm), **wraps it onto the A axis** (`A = v / (π·D) · 360`, `X = u`) and
-> emits **QtPlasmaC rotary G-code** (`G21`, `#<tube-cut>=1`, `M03 $0 S1` / `M05 $0`,
-> pierce dwell). It then rebuilds the tube in 3D and **simulates the cut**, with the
-> G-code synced to the 3D view.
+> emits **native QtPlasmaC rotary G-code**: `#<keep-z-motion>=1` (so QtPlasmaC skips its
+> touch-off and lets the file own Z — no probing on a spinning tube), `M03 $0 S1` / `M05 $0`
+> with the pierce delay left to QtPlasmaC's material table (no manual `G04`), material via
+> `M190 P<n>` + `M66 P3 L3 Q1`, and G93 inverse-time feed for correct surface speed. It then
+> rebuilds the tube in 3D and **simulates the cut**, with the G-code synced to the 3D view.
 >
-> It's browser-based (three.js), no dependencies to run. Simple fixed-torch rotary
-> (THC off) for now. Attached: a generated demo program for a Ø60×300 tube (holes + an
-> axial slot + a ~180° wrapping slot).
+> It's browser-based (three.js), no dependencies to run. Fixed-torch for round tube (THC off,
+> no probe) — the community-documented way — and torch-follows-Z for square tube. Attached: a
+> generated demo program for a Ø60×300 tube (holes + an axial slot + a ~180° wrapping slot).
 >
 > **Before I build this out** I'd like a reality check from people actually cutting tube:
 > 1. Does the fixed-torch `X + A` form match your machine, or do you need the
