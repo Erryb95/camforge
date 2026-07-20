@@ -691,6 +691,13 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
   const dlg = $('sheetDlg');
   const alloySel = /** @type {HTMLSelectElement} */ ($('sAlloy'));
   const mat = /** @type {HTMLSelectElement} */ ($('sMat'));
+  // template del post CUSTOM (per controller non in lista); il postambolo usa '|' come a-capo
+  const readCustomPost = () => ({
+    preamble: /** @type {HTMLInputElement} */ ($('cpPre')).value,
+    on: /** @type {HTMLInputElement} */ ($('cpOn')).value,
+    off: /** @type {HTMLInputElement} */ ($('cpOff')).value,
+    postamble: (/** @type {HTMLInputElement} */ ($('cpPost')).value || '').replace(/\|/g, '\n'),
+  });
   alloySel.innerHTML = Object.values(PLASMA_MATERIALS).map((a) => `<option value="${a.key}">${a.label}</option>`).join('');
   const applyPreset = () => {
     const p = cutParamsFor(parseFloat(mat.value), materialEntries(alloySel.value));
@@ -745,6 +752,7 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
           sheetW: parseFloat(/** @type {HTMLInputElement} */ ($('sSheetW')).value) || 1220,
           sheetH: parseFloat(/** @type {HTMLInputElement} */ ($('sSheetH')).value) || 2440,
           stepover: parseFloat(/** @type {HTMLInputElement} */ ($('sStepover')).value) || 2,
+        customPost: readCustomPost(),
         }));
       }
       const b = sheetSrc.bounds;
@@ -780,6 +788,7 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
         : await sheetCutFromModel(src, {
         operation: /** @type {any} */ (operation),
         stepover: parseFloat(/** @type {HTMLInputElement} */ ($('sStepover')).value) || 2,
+        customPost: readCustomPost(),
         dialect: /** @type {HTMLSelectElement} */ ($('sDialect')).value,
         materialKey: alloySel.value,
         thickness: parseFloat(mat.value),

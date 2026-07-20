@@ -218,7 +218,12 @@
         <option value="mach4">Mach4 (plasma)</option>
         <option value="uccnc">UCCNC (plasma)</option>
         <option value="grbl">GRBL (laser/plasma)</option>
+        <option value="custom">Custom (qualsiasi controller)</option>
       </select></label>
+      <label>Custom: preambolo<input type="text" id="cpPre" placeholder="G21 G90" title="Solo se controller = Custom"></label>
+      <label>Custom: accensione<input type="text" id="cpOn" placeholder="M3"></label>
+      <label>Custom: spegnimento<input type="text" id="cpOff" placeholder="M5"></label>
+      <label>Custom: postambolo<input type="text" id="cpPost" placeholder="M5 / M2 (separati da |)"></label>
       <label>Materiale<select id="sAlloy"></select></label>
       <label>Spessore<select id="sMat"></select></label>
       <label>Kerf (mm)<input type="number" id="sKerf" min="0" step="0.1"></label>

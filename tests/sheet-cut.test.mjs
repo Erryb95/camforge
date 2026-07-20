@@ -116,6 +116,18 @@ test('pocketRings: riempie un quadrato con anelli concentrici via via più inter
   assert.ok(w(rings[0]) > w(rings[rings.length - 1]), 'gli anelli rimpiccioliscono verso il centro');
 });
 
+test('sheetCut: dialetto CUSTOM — usa i template utente (preambolo/on/off/postambolo/commento)', async () => {
+  const { gcode } = await sheetCutFromModel(dxf(), {
+    thickness: 3, dialect: 'custom', tabCount: 0,
+    customPost: { preamble: 'G21 G17 CUSTOMPRE', on: 'M7', off: 'M8', postamble: 'M8\nM30', comment: ';' },
+  });
+  assert.ok(/^G21 G17 CUSTOMPRE$/m.test(gcode), 'preambolo custom');
+  assert.ok(/^M7$/m.test(gcode) && /^M8$/m.test(gcode), 'accensione/spegnimento custom');
+  assert.ok(gcode.trimEnd().endsWith('M30'), 'postambolo custom');
+  assert.ok(/^; contorno/m.test(gcode), 'commenti stile ;');
+  assert.ok(!/M190/.test(gcode), 'custom: niente material file QtPlasmaC');
+});
+
 test('sheetCut: nessun contorno chiuso → errore chiaro', async () => {
   const empty = { name: 'x.dxf', segments: [], meta: { dialect: 'DXF' } };
   await assert.rejects(() => sheetCutFromModel(empty, {}), /contorno CHIUSO/);

@@ -94,6 +94,7 @@ export async function sheetCutFromModel(model, opts = {}) {
     tabCount: operation === 'cut' ? (opts.tabCount ?? 0) : 0,   // tab solo nel taglio passante
     tabLen: opts.tabLen ?? 3,
     engrave: operation === 'engrave',
+    customPost: opts.customPost,
     name: opts.name,
   });
 
@@ -133,7 +134,7 @@ export function sheetTextGcode(text, opts = {}) {
   const dialect = opts.dialect || 'qtplasmac';
   const material = dialect === 'qtplasmac' ? (opts.material ?? materialNumber(opts.materialKey || 'mild_steel', opts.thickness ?? 2)) : null;
   const name = opts.name || `testo.mark.ngc`;
-  const post = postSheetCut(cam, { dialect, feed: opts.feed ?? 3000, power: opts.power, material, engrave: true, name });
+  const post = postSheetCut(cam, { dialect, feed: opts.feed ?? 3000, power: opts.power, material, engrave: true, customPost: opts.customPost, name });
   const info = `marcatura testo "${text}" · ${t.width.toFixed(0)}×${t.height.toFixed(0)} mm · ${t.polylines.length} tratti · ${dialect}`;
   return { gcode: post.text, lines: post.lines, name, info, cam };
 }

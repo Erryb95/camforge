@@ -113,6 +113,24 @@ const DIALECTS = {
 };
 
 /**
+ * Dialetto CUSTOM costruito dai template dell'utente (per controller non in lista).
+ * @param {{preamble?:string, on?:string, off?:string, postamble?:string, comment?:string, pierce?:boolean}} cp
+ */
+function buildCustom(cp) {
+  const lines = (s, def) => String(s ?? def).split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  return {
+    title: 'Custom',
+    preamble: lines(cp.preamble, 'G21 G90'),
+    material: () => [],
+    on: () => lines(cp.on, 'M3'),
+    off: () => lines(cp.off, 'M5'),
+    pierce: (s) => (cp.pierce !== false && s > 0 ? [`G4 P${f(s)}`] : []),
+    postamble: lines(cp.postamble, 'M5\nM2'),
+    comment: cp.comment === ';' ? (t) => `; ${t}` : (t) => `(${t.replace(/[()]/g, '')})`,
+  };
+}
+
+/**
  * @typedef {{pts:{u:number,v:number}[], lead:{u:number,v:number}[], tag?:string, hole?:boolean, depth?:number}} SheetContour
  * @typedef {{dialect?:'qtplasmac'|'grbl'|'linuxcnc', feed?:number, power?:number, thickness?:number,
  *   pierceMs?:number, material?:number|null, tabCount?:number, tabLen?:number, name?:string}} SheetPostOpts
@@ -125,7 +143,7 @@ const DIALECTS = {
  * @returns {{text:string, lines:string[]}}
  */
 export function postSheetCut(cam, opts = {}) {
-  const d = DIALECTS[opts.dialect || 'qtplasmac'];
+  const d = opts.dialect === 'custom' ? buildCustom(opts.customPost || {}) : (DIALECTS[opts.dialect || 'qtplasmac'] || DIALECTS.qtplasmac);
   const feed = opts.feed ?? 3000;
   const power = opts.power ?? 800;
   const material = opts.material === undefined ? 0 : opts.material;
