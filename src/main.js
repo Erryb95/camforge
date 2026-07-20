@@ -4,6 +4,7 @@
 import './loaders/nc/index.js';                 // registra il loader NC (+fallback)
 import './loaders/alma/index.js';               // registra il loader AlmaCAM (.cn/.ctd)
 import './loaders/dxf/index.js';                // registra il loader DXF
+import './loaders/svg/index.js';                // registra il loader SVG (2D vettoriale)
 import './loaders/step/index.js';               // registra il loader STEP (async, WASM)
 import './loaders/dwg/index.js';                // registra il loader DWG (async, WASM, binario)
 import './loaders/atd/index.js';                // registra il loader ActTubes (.atd)
@@ -331,11 +332,11 @@ function isCadPart(m) {
 }
 // DXF 2D fresabile (2.5D): profilo piano → lastra con fori (la validità dei contorni si controlla al click)
 function isDxf2d(m) {
-  return !!(m && m.meta && m.meta.dialect === 'DXF') && m.segments.some((s) => s.type !== 'rapid');
+  return !!(m && m.meta && (m.meta.dialect === 'DXF' || m.meta.dialect === 'SVG')) && m.segments.some((s) => s.type !== 'rapid');
 }
 // avvolgibile su tubo rotary: DXF o profilo STEP/IGES/BREP planare (contorni chiusi)
 function isRotaryWrappable(m) {
-  return !!(m && m.meta && ['DXF', 'STEP', 'IGES', 'BREP'].includes(m.meta.dialect))
+  return !!(m && m.meta && ['DXF', 'SVG', 'STEP', 'IGES', 'BREP'].includes(m.meta.dialect))
     && m.segments.some((s) => s.type !== 'rapid');
 }
 
