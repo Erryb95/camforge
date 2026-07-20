@@ -1,9 +1,9 @@
 {
-  "name": "cad-cam-visual-lge-desktop",
+  "name": "camforge-desktop",
   "version": "0.6.0",
   "private": true,
-  "description": "Guscio desktop (Electron) del CAD/CAM Viewer LGE — sandbox eseguibile offline, in parallelo al sito.",
-  "author": "LGE — CAD/CAM Viewer",
+  "description": "CamForge desktop — browser CAD/CAM (fresatura, taglio, piega, rotary plasma) eseguibile offline.",
+  "author": "CamForge",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -16,8 +16,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.lge.cadcamviewer",
-    "productName": "CAD-CAM Viewer LGE",
+    "appId": "app.camforge.desktop",
+    "productName": "CamForge",
     "directories": { "output": "dist", "buildResources": "build" },
     "files": ["main.js", "build/icon.ico"],
     "extraResources": [
@@ -33,7 +33,7 @@
     "win": {
       "target": ["nsis", "portable"],
       "icon": "build/icon.ico",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "CamForge-${ext}"
     },
     "fileAssociations": [
       { "ext": "nc", "name": "Programma NC / G-code", "role": "Viewer" },
@@ -56,10 +56,11 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "artifactName": "CamForge-Setup.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "artifactName": "CamForge.${ext}"
     }
   }
 }

@@ -115,7 +115,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#14171c',            // stesso sfondo del viewer: niente flash bianco
-    title: 'CAD/CAM Viewer — LGE',
+    title: 'CamForge',
     icon: path.join(__dirname, 'build', 'icon.ico'),
     autoHideMenuBar: true,
     webPreferences: {
