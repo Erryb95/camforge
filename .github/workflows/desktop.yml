@@ -1,0 +1,44 @@
+name: Build CamForge desktop (Windows)
+
+# Su ogni tag versione (vX.Y.Z) builda la portable Electron e pubblica una
+# RELEASE con l'eseguibile. Nome file STABILE (CamForge.exe) ⇒ il sito può linkare
+# sempre l'ultima:  /releases/latest/download/CamForge.exe
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install & build portable
+        working-directory: desktop
+        run: |
+          npm install --no-audit --no-fund
+          npm run dist:portable
+
+      - name: Upload build artifact (per workflow_dispatch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamForge-portable
+          path: desktop/dist/CamForge.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (solo su tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/dist/CamForge.exe
+          name: CamForge ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
