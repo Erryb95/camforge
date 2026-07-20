@@ -6,7 +6,7 @@
   "description": "Visualizzatore 2D percorsi utensile da file NC/G-code (fase 1). Estensioni previste: DXF, DWG, STEP.",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test \"tests/*.test.mjs\"",
+    "test": "node scripts/run-tests.mjs",
     "test:rotary": "node --test tests/rotary-native.test.mjs tests/tube-wrap.test.mjs",
     "gen:machine-test": "node scripts/gen-machine-test.mjs",
     "gen:rotary-samples": "node scripts/gen-rotary-native.mjs"
