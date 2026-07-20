@@ -41,14 +41,14 @@ export function materialNumber(alloyKey, thickness) {
  * altezze non presenti nei cut chart usano default sensati: cut height 1.5 mm,
  * pierce height = 2.5× la cut height (≈3.8 mm, valore tipico Hypertherm SYNC).
  * @param {{t:number, kerf:number, feed:number, pierce:number, amps:number, volts?:number}} preset
- * @param {{number:number, alloyLabel:string, cutHeight?:number, piercePct?:number, cutVolts?:number, cutMode?:number}} opts
+ * @param {{number:number, alloyLabel:string, gas?:string, gasPressure?:number, cutHeight?:number, piercePct?:number, cutVolts?:number, cutMode?:number}} opts
  * @returns {QtMaterial}
  */
 export function presetToMaterial(preset, opts) {
   const cutHeight = opts.cutHeight ?? 1.5;
   return {
     number: opts.number,
-    name: `${opts.alloyLabel} ${preset.t} mm (${preset.amps}A)`,
+    name: `${opts.alloyLabel} ${preset.t}mm ${preset.amps}A${opts.gas ? ' · ' + opts.gas : ''}`,
     kerf: preset.kerf,
     pierceHeight: round1(cutHeight * (opts.piercePct ?? 2.5)),
     pierceDelay: preset.pierce,
@@ -59,7 +59,7 @@ export function presetToMaterial(preset, opts) {
     cutAmps: preset.amps,
     cutVolts: preset.volts ?? opts.cutVolts ?? 0,
     pauseAtEnd: 0,
-    gasPressure: 0,
+    gasPressure: opts.gasPressure ?? 0,   // 0 = pressione di default della macchina (Powermax auto)
     cutMode: opts.cutMode ?? 1,
   };
 }
@@ -107,10 +107,11 @@ export function materialFileForAlloy(alloyKey, opts = {}) {
   const alloy = PLASMA_MATERIALS[alloyKey] || PLASMA_MATERIALS.mild_steel;
   const start = opts.startNumber ?? alloyBase(alloyKey);   // numeri unici per lega
   const materials = alloy.entries.map((p, i) => presetToMaterial(p, {
-    number: start + i, alloyLabel: alloy.label, cutHeight: opts.cutHeight, piercePct: opts.piercePct,
+    number: start + i, alloyLabel: alloy.label, gas: alloy.gas,
+    gasPressure: opts.gasPressure, cutHeight: opts.cutHeight, piercePct: opts.piercePct,
   }));
   return {
-    text: qtplasmacMaterialFile(materials, { title: `${alloy.label} (${alloy.gas}) — ${materials.length} spessori` }),
+    text: qtplasmacMaterialFile(materials, { title: `${alloy.label} · gas: ${alloy.gas} — ${materials.length} spessori` }),
     count: materials.length, alloy: alloy.label, materials,
   };
 }

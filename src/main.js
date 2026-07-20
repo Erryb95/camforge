@@ -173,9 +173,9 @@ function displayModel(m, fileName, opts = {}) {
     $('btnGenNc').hidden = !lastStep;
     $('btnDlNc').hidden = true;
     $('btnMillPart').hidden = !isCadPart(model) && !isDxf2d(model);   // → Fresa: pezzo 3D (mesh) o DXF 2.5D
-    // → Tubo rotary: ricorda il DXF sorgente così il pannello resta usabile per
-    // ri-tarare i parametri anche dopo aver mostrato il modello avvolto (QTPLASMAC)
-    if (isDxf2d(m)) rotarySrc = m;
+    // → Tubo rotary: ricorda il modello sorgente (DXF o STEP/IGES planare) così il
+    // pannello resta usabile per ri-tarare i parametri anche dopo il wrap (QTPLASMAC)
+    if (isRotaryWrappable(m)) rotarySrc = m;
     $('btnDxfRotary').hidden = !rotarySrc;
 
     // simulazione asportazione: azzera e mostra i bottoni in base al contenuto
@@ -324,6 +324,11 @@ function isCadPart(m) {
 // DXF 2D fresabile (2.5D): profilo piano → lastra con fori (la validità dei contorni si controlla al click)
 function isDxf2d(m) {
   return !!(m && m.meta && m.meta.dialect === 'DXF') && m.segments.some((s) => s.type !== 'rapid');
+}
+// avvolgibile su tubo rotary: DXF o profilo STEP/IGES/BREP planare (contorni chiusi)
+function isRotaryWrappable(m) {
+  return !!(m && m.meta && ['DXF', 'STEP', 'IGES', 'BREP'].includes(m.meta.dialect))
+    && m.segments.some((s) => s.type !== 'rapid');
 }
 
 async function setStockMode(on) {

@@ -116,7 +116,7 @@ test('material file QtPlasmaC: formato + campi obbligatori + valori dal preset',
     assert.ok(new RegExp(`^${k}\\s+= `, 'm').test(text), `manca campo ${k}`);
   }
   // il materiale 4 mm riflette il preset reale (kerf 1.4, feed 4220, pierce 0.1)
-  const m4 = materials.find((m) => m.name.includes('4 mm'));
+  const m4 = materials.find((m) => m.name.includes('4mm'));
   assert.equal(m4.kerf, 1.4);
   assert.equal(m4.cutSpeed, 4220);
   assert.equal(m4.pierceDelay, 0.1);
@@ -127,11 +127,11 @@ test('materiali multipli: inox e alluminio con dati reali + volts nel material f
   const inox = materialFileForAlloy('stainless');
   const alu = materialFileForAlloy('aluminum');
   // inox 4 mm: kerf 1.3, feed 5160, volts 133 (Hypertherm 65A)
-  const i4 = inox.materials.find((m) => m.name.includes('4 mm'));
+  const i4 = inox.materials.find((m) => m.name.includes('4mm'));
   assert.equal(i4.kerf, 1.3); assert.equal(i4.cutSpeed, 5160); assert.equal(i4.cutVolts, 133);
   assert.ok(/^CUT_VOLTS\s+= 133$/m.test(inox.text));
   // alluminio 3 mm: kerf 1.1, feed 4400, volts 142
-  const a3 = alu.materials.find((m) => m.name.includes('3 mm'));
+  const a3 = alu.materials.find((m) => m.name.includes('3mm'));
   assert.equal(a3.kerf, 1.1); assert.equal(a3.cutSpeed, 4400); assert.equal(a3.cutVolts, 142);
   assert.ok(inox.alloy === 'Inox 304' && alu.alloy === 'Alluminio');
 });
@@ -139,7 +139,7 @@ test('materiali multipli: inox e alluminio con dati reali + volts nel material f
 test('presetToMaterial: numero e nome coerenti', () => {
   const m = presetToMaterial({ t: 6, kerf: 1.5, feed: 2570, pierce: 0.2, amps: 65 }, { number: 3, alloyLabel: 'Acciaio dolce' });
   assert.equal(m.number, 3);
-  assert.ok(m.name.includes('6 mm') && m.name.includes('65A'));
+  assert.ok(m.name.includes('6mm') && m.name.includes('65A'));
   const txt = qtplasmacMaterialFile([m]);
   assert.ok(txt.includes('[MATERIAL_NUMBER_3]'));
 });

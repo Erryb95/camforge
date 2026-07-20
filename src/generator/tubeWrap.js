@@ -296,6 +296,14 @@ export function contoursFromDxfModel(model) {
 }
 
 /**
+ * Estrazione contorni model-agnostica (DXF o STEP/IGES planare): opera sui
+ * segmenti del modello, quindi un profilo STEP planare (wire di una faccia,
+ * proiettato su X-Y) si avvolge sul tubo come un DXF. Alias di contoursFromDxfModel.
+ * @param {import('../core/model.js').SceneModel} model @returns {RotaryContour[]}
+ */
+export const contoursFromModel = contoursFromDxfModel;
+
+/**
  * Estensione del disegno DXF in (u,v) + Ø suggerito perché l'altezza del disegno
  * copra esattamente un giro (circonferenza = altezza ⇒ Ø = altezza/π).
  * @param {import('../core/model.js').SceneModel} model

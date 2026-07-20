@@ -262,12 +262,18 @@ export async function applyKerfAndLeads(contours, opts = {}) {
     } else {
       rings = [ring];
     }
-    for (const rg of rings) items.push({ ring: rg, hole, depth: depth[i], tag: contours[i].tag });
+    for (const rg of rings) {
+      let cv = 0; for (const p of rg) cv += p.v; cv /= (rg.length || 1);
+      items.push({ ring: rg, hole, depth: depth[i], cv, tag: contours[i].tag });
+    }
   }
 
-  // ORDINE inside-out: prima i contorni più interni (annidamento alto), il
-  // perimetro esterno per ultimo (il pezzo resta fermo finché è tagliato).
-  items.sort((a, b) => b.depth - a.depth);
+  // ORDINE: (1) inside-out per contenimento (i più interni prima, il perimetro
+  // per ultimo — il pezzo resta fermo finché è tagliato); (2) a parità di livello,
+  // per ascissa perimetrale crescente ⇒ i tagli procedono in UN'UNICA spazzata
+  // di rotazione A (indicizzazione: minimizza le rotazioni; sul tubo rettangolare
+  // raggruppa naturalmente i tagli per faccia).
+  items.sort((a, b) => b.depth - a.depth || a.cv - b.cv);
 
   /** @type {{pts:{u:number,v:number}[], lead:{u:number,v:number}[], tag?:string}[]} */
   const out = [];
