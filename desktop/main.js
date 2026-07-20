@@ -131,7 +131,8 @@ async function createWindow() {
     return { action: 'allow' };
   });
 
-  await win.loadURL(url + '?shell=lge');   // marcatore: abilita le feature desktop-only (controllo a mani)
+  // il desktop apre direttamente l'APP (app.html); la landing/pricing restano su '/'
+  await win.loadURL(url.replace(/\/$/, '') + '/app.html?shell=lge');   // ?shell=lge: abilita le feature desktop-only (controllo a mani)
   win.on('closed', () => { win = null; });
 
   if (pendingFile) { const f = pendingFile; pendingFile = null; openFileInWindow(f); }

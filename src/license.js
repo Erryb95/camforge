@@ -13,7 +13,7 @@
 const LS_KEY = 'lge.pro.key';
 
 /** URL della pagina prezzi (sito statico servito dallo stesso server). */
-export const PRICING_URL = '/site/pricing.html';
+export const PRICING_URL = '/pricing.html';
 
 /** True se una chiave Pro è attiva in questo browser. */
 export function isPro() {

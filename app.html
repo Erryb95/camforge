@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CamForge — browser CAD/CAM</title>
+<link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand"><span class="spark"></span><b>CamForge</b><span class="phase">browser CAD·CAM</span></div>
+  <button id="btnOpen" title="Apri un file NC">&#128194; Apri</button>
+  <input type="file" id="fileInput" hidden
+         accept=".nc,.gcode,.ngc,.tap,.cnc,.iso,.eia,.din,.mpf,.pgm,.txt,.dxf,.dwg,.cn,.ctd,.atd,.stp,.step,.igs,.iges,.brep">
+  <button id="btnDemo" title="Carica il programma dimostrativo">Demo</button>
+  <button id="btnDemoRotary" title="DEMO CAM tubo/rotary: avvolge un pattern sullo svolto del tubo, genera G-code QtPlasmaC (X asse tubo, A rotazione) e simula il taglio &mdash; &#11015; NC per scaricarlo">&#127744; Tubo rotary</button>
+  <span class="sep"></span>
+  <div class="seg-btns" id="viewBtns" title="Piano di vista">
+    <button data-v="XY" class="active">XY</button>
+    <button data-v="XZ">XZ</button>
+    <button data-v="YZ">YZ</button>
+    <button data-v="3D" id="btn3d"
+            title="Vista orbitale 3D — trascina per ruotare, Shift+trascina per spostare">3D</button>
+    <button data-v="DEV" id="btnDev" hidden
+            title="Superficie del tubo svolta in piano (L = asse tubo, C = perimetro)">Svolto</button>
+  </div>
+  <button id="btnSolid" class="toggle active" hidden
+          title="Alterna solido ombreggiato / filiforme (vista 3D)">&#9632; Solido</button>
+  <button id="btnStock" class="toggle" hidden
+          title="Modulo FRESATURA: asportazione materiale (tri-dexel) con la punta che segue l'utensile — usa &#9654; o lo slider">&#9935; Fresatura</button>
+  <label id="millResWrap" class="chk" hidden title="Risoluzione griglia tri-dexel: più alta = più dettaglio ma più lenta">
+    &#9638; <input type="range" id="millRes" min="40" max="180" step="10" value="90" style="width:76px;vertical-align:middle">
+    <span id="millResVal" style="font-variant-numeric:tabular-nums"></span></label>
+  <select id="bitMode" class="chk" hidden title="Dove mostrare la punta di fresatura">
+    <option value="follow">Punta: avanzamento</option>
+    <option value="segment">Punta: segmento sel.</option></select>
+  <select id="millAxes" class="chk" hidden title="3 assi = utensile sempre verticale · 4-5 assi = usa l'orientamento utensile (B/C o EI/EJ/EK) dal G-code">
+    <option value="3">3 assi</option>
+    <option value="5">4-5 assi</option></select>
+  <select id="millMaterial" class="chk" hidden title="Materiale del pezzo: cambia la punta consigliata (taglienti/rivestimento) e i parametri di taglio"></select>
+  <label id="millAllowWrap" class="chk" hidden title="Sovrametallo del solido di partenza (mm)">Sovram.
+    <input type="number" id="millAllow" min="0" max="20" step="0.5" value="2" style="width:50px"></label>
+  <button id="btnLaser" class="toggle" hidden
+          title="Simula il TAGLIO (laser/plasma/waterjet/ossitaglio): kerf attraverso lo spessore, pezzi che si staccano, testa che segue &mdash; usa &#9654; o lo slider">&#9986; Taglio</button>
+  <select id="procSelect" hidden title="Processo di taglio: cambia larghezza del kerf ed effetto (laser/plasma/waterjet/ossitaglio)"></select>
+  <button id="btnFold" class="toggle" hidden
+          title="PIEGATURA tubo: ricostruisce il pezzo piegato dal programma LRA/YBC e anima la piega (barra dritta &rarr; finito) &mdash; usa &#9654; o lo slider">&#8635; Piega</button>
+  <button id="btnHands" class="toggle" hidden
+          title="Controlla la vista 3D con le MANI via webcam (solo app desktop): mano aperta &rarr; orbita, pinch pollice+indice &rarr; zoom">&#9995; Mani</button>
+  <button id="btnFit" title="Adatta alla vista (F)">&#10530; Adatta</button>
+  <button id="btnGenNc" hidden
+          title="Genera il programma NC da questo STEP (tubo &rarr; dialetto Cutlite, piastra &rarr; GRBL) e caricalo nel viewer">&#9881; &rarr; NC</button>
+  <button id="btnDlNc" hidden title="Scarica l'ultimo NC generato">&#11015; NC</button>
+  <button id="btnMillPart" hidden
+          title="Genera la FRESATURA di questo pezzo 3D: orienta il pezzo, calcola il solido minimo e crea il percorso raster 3 assi &mdash; poi &#9935; Fresatura per simulare">&#9935; &rarr; Fresa</button>
+  <button id="btnDxfRotary" hidden
+          title="Avvolgi QUESTO disegno DXF su un tubo (X=asse tubo, Y=circonferenza) e genera il G-code QtPlasmaC rotary &mdash; &#11015; NC per scaricarlo">&#127744; &rarr; Tubo rotary</button>
+  <label class="chk" title="Mostra/nascondi movimenti rapidi G0">
+    <input type="checkbox" id="chkRapids" checked> Rapidi</label>
+  <label class="chk" title="Mostra/nascondi punti di foratura (cicli G81-G83)">
+    <input type="checkbox" id="chkPoints" checked> Fori</label>
+  <span class="sep"></span>
+  <button id="btnPlay" title="Simula il percorso (Spazio)">&#9654;</button>
+  <input type="range" id="progress" min="0" max="1000" value="1000" title="Avanzamento simulazione">
+  <select id="speed" title="Velocità simulazione">
+    <option value="25">lenta</option>
+    <option value="80" selected>media</option>
+    <option value="250">veloce</option>
+    <option value="900">turbo</option>
+  </select>
+  <span class="grow"></span>
+  <button id="btnPro" title="Upgrade to Pro: unlock G-code &amp; material-file export">&#9889; Upgrade</button>
+  <button id="btnCode" class="toggle active">Codice</button>
+  <button id="btnInfo" class="toggle active">Info</button>
+</header>
+
+<main>
+  <aside id="codePanel" class="panel">
+    <div class="panel-title">Programma</div>
+    <div id="codeSearch">
+      <input id="searchInput" type="text" placeholder="Cerca…  (Ctrl+F)" spellcheck="false">
+      <span id="searchCount"></span>
+      <button id="searchPrev" title="Precedente (Shift+Invio)">&#9650;</button>
+      <button id="searchNext" title="Successivo (Invio)">&#9660;</button>
+    </div>
+    <div id="codeScroll"><div id="codeSpacer"><div id="codeView"></div></div></div>
+  </aside>
+
+  <div id="viewport">
+    <canvas id="canvas"></canvas>
+    <div id="dropHint">
+      <div class="big">Trascina qui un file <b>.nc</b></div>
+      <div class="small">oppure usa &#128194; Apri &nbsp;·&nbsp; formati: nc · gcode · ngc · tap · cnc</div>
+    </div>
+    <div id="segTip" hidden></div>
+  </div>
+
+  <aside id="infoPanel" class="panel">
+    <div class="panel-title">Informazioni</div>
+    <div id="infoContent"></div>
+  </aside>
+</main>
+
+<footer id="statusbar">
+  <span id="sbCoords">—</span>
+  <span id="sbZoom"></span>
+  <span id="sbCount"></span>
+  <span id="sbUnits"></span>
+  <span class="grow"></span>
+  <span id="sbFile">nessun file</span>
+</footer>
+
+<div id="toast" hidden></div>
+
+<!-- Upgrade to Pro (gate su export) -->
+<div id="upgradeDlg" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">&#9889; Unlock CamForge <b>Pro</b></div>
+    <div class="modal-info">
+      You just saw it work: unroll &rarr; wrap &rarr; QtPlasmaC. <b>Exporting</b> the G-code and the
+      material file is a Pro feature. Free stays free: viewer, simulation and preview.
+    </div>
+    <ul class="pro-list">
+      <li>Unlimited <b>QtPlasmaC rotary G-code</b> export (round &amp; rectangular tube)</li>
+      <li>DXF / STEP &rarr; wrap, kerf compensation, lead-in/out, torch-follow (Z)</li>
+      <li>QtPlasmaC <b>material files</b> (real Hypertherm cut charts, 5 alloys)</li>
+    </ul>
+    <div class="modal-grid">
+      <label style="grid-column:1/3">License key<input type="text" id="proKeyInput" placeholder="paste your Pro key (received after checkout)"></label>
+    </div>
+    <div class="modal-actions">
+      <button id="upgradeCancel">Not now</button>
+      <button id="upgradeActivate">Activate</button>
+      <button id="upgradeBuy" class="primary">&#128279; See pricing</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pannello parametri: DXF svolto → tubo rotary (kerf, lead-in, materiale) -->
+<div id="rotaryDlg" class="modal" hidden>
+  <div class="modal-card">
+    <div class="modal-title">&#127744; Avvolgi su tubo (rotary plasma)</div>
+    <div id="rotaryInfo" class="modal-info"></div>
+    <div class="modal-grid">
+      <label>Forma tubo<select id="rShape">
+        <option value="round" selected>Tondo (Ø)</option>
+        <option value="rect">Rettangolare (L×H)</option>
+      </select></label>
+      <label>Lunghezza (mm)<input type="number" id="rLen" min="1" step="1" placeholder="auto"></label>
+      <label id="rDiaLabel">Diametro (mm)<input type="number" id="rDia" min="1" step="0.1"></label>
+      <label id="rWLabel" hidden>Larghezza (mm)<input type="number" id="rW" min="1" step="0.1" value="40"></label>
+      <label id="rHLabel" hidden>Altezza (mm)<input type="number" id="rH" min="1" step="0.1" value="40"></label>
+      <label>Materiale<select id="rAlloy"></select></label>
+      <label>Spessore<select id="rMat"></select></label>
+      <label>Kerf (mm)<input type="number" id="rKerf" min="0" step="0.1"></label>
+      <label>Feed (mm/min)<input type="number" id="rFeed" min="1" step="10"></label>
+      <label>Lead-in<select id="rLead">
+        <option value="arc" selected>arco</option>
+        <option value="line">linea</option>
+        <option value="none">nessuno</option>
+      </select></label>
+      <label>Lead-in (mm)<input type="number" id="rLeadLen" min="0" step="0.5" value="3"></label>
+      <label>Overcut fori (mm)<input type="number" id="rOvercut" min="0" step="0.5" value="4"></label>
+      <label>Topologia<select id="rTopo">
+        <option value="auto" selected>auto</option>
+        <option value="tube">fori nel tubo</option>
+        <option value="sheet">ritaglia sagoma</option>
+      </select></label>
+      <label class="chk-inline"><input type="checkbox" id="rFollow"> Torcia che segue (Z) &mdash; necessaria sul rettangolare</label>
+    </div>
+    <div class="modal-actions">
+      <button id="rotaryCancel">Annulla</button>
+      <button id="rotaryMat" title="Scarica il material file QtPlasmaC (kerf/feed/pierce/altezze per spessore) da caricare nella tua configurazione">&#11015; Material file</button>
+      <button id="rotaryGo" class="primary">&#11015; Genera G-code QtPlasmaC</button>
+    </div>
+  </div>
+</div>
+<style>
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50}
+  .modal-card{background:#1c2027;border:1px solid #333c48;border-radius:10px;padding:18px 20px;min-width:420px;max-width:92vw;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .modal-title{font-size:15px;font-weight:600;margin-bottom:6px}
+  .modal-info{font-size:12px;color:#9fb0c3;margin-bottom:12px;line-height:1.4}
+  .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+  .modal-grid label{display:flex;flex-direction:column;font-size:12px;color:#b8c4d2;gap:4px}
+  .modal-grid input,.modal-grid select{background:#12151a;border:1px solid #333c48;color:#e6edf3;border-radius:6px;padding:6px 8px;font-size:13px}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+  .modal-actions button{padding:7px 14px;border-radius:6px;border:1px solid #333c48;background:#2a323d;color:#e6edf3;cursor:pointer;font-size:13px}
+  .modal-actions button.primary{background:#2563a8;border-color:#2f78c9}
+  .modal-grid label.chk-inline{grid-column:1/3;flex-direction:row;align-items:center;gap:8px}
+  .modal-grid label.chk-inline input{width:auto}
+  .pro-list{margin:0 0 14px;padding-left:20px;font-size:12.5px;color:#b8c4d2;line-height:1.7}
+  #btnPro{background:linear-gradient(135deg,#f0a020,#e8641c);border:none;color:#1a1000;font-weight:700}
+</style>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

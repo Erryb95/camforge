@@ -22,6 +22,9 @@
     "files": ["main.js", "build/icon.ico"],
     "extraResources": [
       { "from": "../index.html", "to": "web/index.html" },
+      { "from": "../app.html", "to": "web/app.html" },
+      { "from": "../pricing.html", "to": "web/pricing.html" },
+      { "from": "../site.css", "to": "web/site.css" },
       { "from": "../serve.mjs", "to": "web/serve.mjs" },
       { "from": "../src", "to": "web/src" },
       { "from": "../vendor", "to": "web/vendor" },
