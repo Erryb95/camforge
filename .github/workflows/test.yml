@@ -1,0 +1,20 @@
+name: Test (Cam engine)
+
+# Esegue l'intera suite (incl. contratto QtPlasmaC-nativo e caricamento STEP in Node
+# via occt WASM) a ogni push/PR. Zero-dip: niente install, tutto in vendor/.
+on:
+  push:
+    branches: ['master', 'main']
+  pull_request: {}
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run test suite
+        run: npm test
