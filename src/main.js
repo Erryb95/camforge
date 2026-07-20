@@ -23,6 +23,7 @@ import { dxfToPartMesh } from './generator/dxfmill.js';       // FRESATURA da DX
 import { generateRotaryDemo, wrapDxfToRotary, dxfDesignExtent } from './generator/tubeWrap.js';  // CAM tubo/rotary: svolto/DXF → wrap asse A → G-code QtPlasmaC
 import { copeToRotary } from './generator/coping.js';  // coping/fish-mouth tubo-tubo → wrap asse A → G-code QtPlasmaC
 import { sheetCutFromModel, sheetTextGcode } from './generator/sheetCut.js';  // CAM taglio lamiera PIATTA + incisione testo
+import { estimateJob, reportText } from './generator/report.js';  // preventivo tempo/costo
 import { cutParamsFor, PLASMA_MATERIALS, materialEntries } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per lega+spessore
 import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
 import { isPro, activatePro, PRICING_URL } from './license.js';   // gating Free/Pro (export = Pro)
@@ -714,6 +715,54 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
     a.download = fname; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     toast(`Material file QtPlasmaC: ${count} materiali (${label}) → ${fname}`, true);
+  });
+  // ⬇ Report tempo/costo: genera col setup corrente, stima e scarica il preventivo.
+  $('sheetReport').addEventListener('click', async () => {
+    if (!sheetSrc) return;
+    try {
+      const operation = /** @type {HTMLSelectElement} */ ($('sOperation')).value;
+      const materialKey = alloySel.value, thickness = parseFloat(mat.value);
+      const feed = parseFloat(/** @type {HTMLInputElement} */ ($('sFeed')).value) || 3000;
+      const dialect = /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sDialect')).value);
+      const qty = parseInt(/** @type {HTMLInputElement} */ ($('sCount')).value, 10) || 1;
+      let gcode, name;
+      if (operation === 'text') {
+        ({ gcode, name } = sheetTextGcode(/** @type {HTMLInputElement} */ ($('sText')).value || 'TEXT',
+          { size: parseFloat(/** @type {HTMLInputElement} */ ($('sTextSize')).value) || 15, dialect, materialKey, thickness, feed }));
+      } else {
+        ({ gcode, name } = await sheetCutFromModel(sheetSrc, {
+          operation: /** @type {any} */ (operation), dialect, materialKey, thickness,
+          kerf: parseFloat(/** @type {HTMLInputElement} */ ($('sKerf')).value), feed,
+          lead: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sLead')).value),
+          leadLen: parseFloat(/** @type {HTMLInputElement} */ ($('sLeadLen')).value),
+          overcut: parseFloat(/** @type {HTMLInputElement} */ ($('sOvercut')).value) || 0,
+          tabCount: parseInt(/** @type {HTMLInputElement} */ ($('sTabCount')).value, 10) || 0,
+          tabLen: parseFloat(/** @type {HTMLInputElement} */ ($('sTabLen')).value) || 3,
+          topology: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sTopo')).value),
+          smallHoleDia: parseFloat(/** @type {HTMLInputElement} */ ($('sSmallHole')).value) || 0,
+          smallHoleFactor: (parseFloat(/** @type {HTMLInputElement} */ ($('sSmallHolePct')).value) || 60) / 100,
+          count: qty, nestGap: parseFloat(/** @type {HTMLInputElement} */ ($('sNestGap')).value) || 6,
+          sheetW: parseFloat(/** @type {HTMLInputElement} */ ($('sSheetW')).value) || 1220,
+          sheetH: parseFloat(/** @type {HTMLInputElement} */ ($('sSheetH')).value) || 2440,
+          stepover: parseFloat(/** @type {HTMLInputElement} */ ($('sStepover')).value) || 2,
+        }));
+      }
+      const b = sheetSrc.bounds;
+      const areaM2 = ((b.max.x - b.min.x) / 1000) * ((b.max.y - b.min.y) / 1000);
+      const materialCost = (parseFloat(/** @type {HTMLInputElement} */ ($('sRateMat')).value) || 0) * areaM2 * (operation === 'cut' ? qty : 1);
+      const est = estimateJob(gcode, {
+        feed, ratePerHour: parseFloat(/** @type {HTMLInputElement} */ ($('sRateHour')).value) || 0,
+        costPerPierce: parseFloat(/** @type {HTMLInputElement} */ ($('sRatePierce')).value) || 0, materialCost,
+      });
+      const txt = reportText(est, { name, material: `${materialKey} ${thickness}mm`, qty: operation === 'cut' ? qty : undefined });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([txt], { type: 'text/plain' }));
+      a.download = (name || 'report').replace(/\.[^.]+$/, '') + '.report.txt';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      const mmss = (m) => { const s = Math.round(m * 60); return `${Math.floor(s / 60)}m ${s % 60}s`; };
+      toast(`Report: tempo ${mmss(est.timeMin)} · ${est.pierces} pierce${est.total > 0 ? ` · € ${est.total.toFixed(2)}` : ''} → scaricato`, true);
+    } catch (err) { console.error(err); toast(`Report fallito: ${/** @type {Error} */(err).message}`); }
   });
   $('sheetCancel').addEventListener('click', () => { dlg.hidden = true; });
   $('sheetGo').addEventListener('click', async () => {
