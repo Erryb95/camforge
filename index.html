@@ -16,6 +16,7 @@
     </a>
     <span class="grow"></span>
     <a href="index.html#suite" class="hide-sm">Suite</a>
+    <a href="index.html#compare" class="hide-sm">vs SheetCam</a>
     <a href="index.html#rotary" class="hide-sm">Rotary plasma</a>
     <a href="index.html#formats" class="hide-sm">Formats</a>
     <a href="index.html#download" class="hide-sm">Download</a>
@@ -30,11 +31,11 @@
     <div class="wrap hero">
       <div>
         <p class="eyebrow">Browser CAD/CAM · view · simulate · generate</p>
-        <h1>Your whole CAM shop,<br><span class="hl">in a browser tab.</span></h1>
+        <h1>Everything your cutting CAM does,<br><span class="hl">plus the rotary they can't post.</span></h1>
         <p class="lead">
-          Open a part, watch it cut or mill in 3D, and export the G-code — no install, nothing to sync.
-          CamForge does <b>milling</b>, <b>plasma / laser / waterjet cutting</b> (sheet <em>and</em> tube),
-          <b>tube bending</b>, and a <b>rotary plasma CAM</b> that open controllers have been missing.
+          Load a DXF/SVG/STEP, get production plasma/laser G-code — <b>kerf comp, lead-in/out, tabs,
+          nesting, part marking</b>. Then the part open controllers have been missing: a <b>rotary tube CAM</b>
+          that posts clean <b>QtPlasmaC</b>. All in the browser, on any OS, and you watch it cut in 3D first.
         </p>
         <div class="cta">
           <a class="btn primary" href="app.html" target="_blank" rel="noopener">▶ Open the live app</a>
@@ -95,11 +96,11 @@ G1 X66.94 <span class="a">A1.74</span> F2184  <span class="c">…</span>
       </div>
       <div class="feat">
         <div class="card"><div class="ic">⛏</div><h3>Milling — 3/4/5 axis</h3><p>Tri-dexel material-removal simulation, tilting-table 4/5-axis, real tool shapes per material. Part → toolpath (raster 3-axis), DXF → 2.5D pockets.</p></div>
-        <div class="card"><div class="ic">✳</div><h3>Cutting — sheet</h3><p>Plasma, laser, waterjet and oxy-fuel. Kerf swath, part separation, heat/spark FX per process, cutting head that follows the path.</p></div>
+        <div class="card"><div class="ic">✳</div><h3>Cutting — sheet</h3><p>Real CAM from a DXF/SVG: <b>kerf compensation, arc lead-in/out, tabs, nesting</b>, small-hole slowdown, engrave &amp; part text — for plasma, laser, waterjet, oxy. Watch it cut in 3D, then export.</p></div>
         <div class="card"><div class="ic">⌀</div><h3>Cutting — tube</h3><p>Unroll the tube, cut on the developed surface, wrap it back on the axis. Round and rectangular sections, torch-follow Z.</p></div>
         <div class="card"><div class="ic">↻</div><h3>Rotary plasma CAM</h3><p>The headline: DXF/STEP → wrap → <b>QtPlasmaC</b> G-code for LinuxCNC/GRBL/FluidNC. The rotary post commercial CAM still skips.</p></div>
         <div class="card"><div class="ic">⤿</div><h3>Tube bending</h3><p>Rebuild the bent part from LRA/YBC programs (K-factor / bend allowance) and animate the bend from straight bar to finished part.</p></div>
-        <div class="card"><div class="ic">⚙</div><h3>NC generators + post</h3><p>STEP→NC, part→milling, DXF→plate, with LinuxCNC / GRBL / Cutlite / QtPlasmaC posts and real cut-chart material presets.</p></div>
+        <div class="card"><div class="ic">⚙</div><h3>NC generators + post</h3><p>STEP→NC, part→milling, DXF→plate. Posts for <b>QtPlasmaC · LinuxCNC · Mach3/4 · UCCNC · GRBL</b> — plus a custom post editor — and real Hypertherm cut-chart presets + time/cost report.</p></div>
       </div>
     </div>
   </section>
@@ -119,6 +120,36 @@ G1 X66.94 <span class="a">A1.74</span> F2184  <span class="c">…</span>
         from real Hypertherm cut charts (mild steel, stainless, aluminium, FineCut, F5). Round and
         rectangular tube. Simulate first, then export.
       </p>
+    </div>
+  </section>
+
+  <!-- COMPARE: CamForge vs SheetCam -->
+  <section id="compare">
+    <div class="wrap">
+      <div class="sec-head">
+        <p class="eyebrow">Feature for feature</p>
+        <h2>What a $354 desktop CAM does — plus what it can't.</h2>
+        <p>The affordable plasma CAM everyone runs is SheetCam. CamForge matches its flat-sheet workflow and adds the browser, the 3D simulation, and the rotary QtPlasmaC post it makes you hack.</p>
+      </div>
+      <div class="cmp-wrap">
+        <table class="cmp">
+          <thead>
+            <tr><th>Capability</th><th>SheetCam TNG</th><th class="me">CamForge</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Flat plasma / laser CAM<span>kerf · lead-in/out · tabs</span></td><td class="y">✓</td><td class="me y">✓</td></tr>
+            <tr><td>Nesting<span>bounding-box</span></td><td class="y">✓</td><td class="me y">✓</td></tr>
+            <tr><td>Engrave &amp; part text</td><td class="y">✓</td><td class="me y">✓</td></tr>
+            <tr><td>Post-processors</td><td>paid modules</td><td class="me">6 built-in + <b>custom editor</b></td></tr>
+            <tr><td>Import</td><td>DXF · SVG</td><td class="me">DXF · SVG · <b>STEP · IGES · DWG · STL</b></td></tr>
+            <tr><td>Material-removal simulation</td><td class="n">— backplot only</td><td class="me y">✓ 3/4/5-axis</td></tr>
+            <tr class="hi"><td>Rotary tube → <b>QtPlasmaC</b></td><td class="n">plugin +$75, post not clean</td><td class="me y">✓ native, turnkey</td></tr>
+            <tr class="hi"><td>Runs on</td><td class="n">Windows install</td><td class="me y">any OS · browser · zero install</td></tr>
+            <tr class="hi"><td>Price</td><td>$279 + $75 rotary ≈ <b>$354</b></td><td class="me price">$49 lifetime</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="cmp-note">CamForge is a young tool — verify every program on your own machine before cutting. SheetCam is mature and respected; we match it on the flat-sheet essentials and win on browser, simulation, rotary QtPlasmaC and price.</p>
     </div>
   </section>
 
