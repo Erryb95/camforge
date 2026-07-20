@@ -71,6 +71,26 @@ test('planTabRuns: N tab → N+1 run; troppo piccolo → 1 run', () => {
   assert.equal(planTabRuns(sq, 10, 30).length, 1);
 });
 
+test('sheetCut: dialetti Mach3/Mach4/UCCNC — M3/M5 + M30, niente material file', async () => {
+  for (const d of ['mach3', 'mach4', 'uccnc']) {
+    const { gcode } = await sheetCutFromModel(dxf(), { thickness: 3, dialect: d, tabCount: 0 });
+    assert.ok(/^M3$/m.test(gcode), `${d}: torcia M3`);
+    assert.ok(/^M5$/m.test(gcode), `${d}: torcia M5`);
+    assert.ok(/^M30$/m.test(gcode), `${d}: fine M30`);
+    assert.ok(!/M190/.test(gcode), `${d}: niente material file`);
+  }
+});
+
+test('sheetCut: regola fori piccoli — feed ridotto sotto soglia Ø', async () => {
+  const feed = 4220;
+  const { gcode, info } = await sheetCutFromModel(dxf(), {
+    thickness: 4, dialect: 'mach3', kerf: 1.4, feed, smallHoleDia: 300, smallHoleFactor: 0.5, tabCount: 0,
+  });
+  assert.ok(info.includes('fori piccoli'), info);
+  assert.ok(new RegExp(`\\bF${Math.round(feed * 0.5)}\\b`).test(gcode), 'feed ridotto sui fori');
+  assert.ok(new RegExp(`\\bF${feed}\\b`).test(gcode), 'feed pieno sul perimetro');
+});
+
 test('sheetCut: nessun contorno chiuso → errore chiaro', async () => {
   const empty = { name: 'x.dxf', segments: [], meta: { dialect: 'DXF' } };
   await assert.rejects(() => sheetCutFromModel(empty, {}), /contorno CHIUSO/);

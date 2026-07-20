@@ -80,6 +80,36 @@ const DIALECTS = {
     postamble: ['M5', 'G17 G90', 'M2'],
     comment: (t) => `; ${t}`,
   },
+  mach3: {
+    title: 'Mach3 (plasma)',
+    preamble: ['G21 G40 G90 G94 G17'],
+    material: () => [],
+    on: () => ['M3'],                    // Mach3: torcia ON = spindle M3
+    off: () => ['M5'],
+    pierce: (s) => (s > 0 ? [`G4 P${f(s)}`] : []),
+    postamble: ['M5', 'G0 X0 Y0', 'M30'],
+    comment: (t) => `(${t.replace(/[()]/g, '')})`,
+  },
+  mach4: {
+    title: 'Mach4 (plasma)',
+    preamble: ['G21 G40 G90 G94 G17'],
+    material: () => [],
+    on: () => ['M3'],
+    off: () => ['M5'],
+    pierce: (s) => (s > 0 ? [`G4 P${f(s)}`] : []),
+    postamble: ['M5', 'M30'],
+    comment: (t) => `(${t.replace(/[()]/g, '')})`,
+  },
+  uccnc: {
+    title: 'UCCNC (plasma)',
+    preamble: ['G21 G40 G90 G94 G17'],
+    material: () => [],
+    on: () => ['M3'],
+    off: () => ['M5'],
+    pierce: (s) => (s > 0 ? [`G4 P${f(s)}`] : []),
+    postamble: ['M5', 'M30'],
+    comment: (t) => `(${t.replace(/[()]/g, '')})`,
+  },
 };
 
 /**
@@ -118,13 +148,14 @@ export function postSheetCut(cam, opts = {}) {
     const runs = (!c.hole && tabCount > 0) ? planTabRuns(pts, tabCount, tabLen) : [pts];
 
     // primo run: preceduto dal lead-in (che termina su pts[0] = runs[0][0])
+    const cf = c.feed ?? feed;          // feed per-contorno (regola fori piccoli)
     const first = runs[0];
     const entry = lead.length ? lead[0] : first[0];
     L.push(`G0 X${f(entry.x)} Y${f(entry.y)}`);
     L.push(...d.on(power));
     L.push(...d.pierce(pierceS));
     let feededOnce = false;
-    const g1 = (p) => { L.push(`G1 X${f(p.x)} Y${f(p.y)}${feededOnce ? '' : ` F${f(feed)}`}`); feededOnce = true; };
+    const g1 = (p) => { L.push(`G1 X${f(p.x)} Y${f(p.y)}${feededOnce ? '' : ` F${f(cf)}`}`); feededOnce = true; };
     for (const p of lead.slice(1)) g1(p);           // lead-in (dal 2° punto)
     for (let k = (lead.length ? 1 : 0); k < first.length; k++) g1(first[k]);
     // run successivi: tab = torcia OFF, rapido oltre il ponticello, riaccendi

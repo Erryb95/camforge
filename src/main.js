@@ -731,6 +731,8 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
         tabCount: parseInt(/** @type {HTMLInputElement} */ ($('sTabCount')).value, 10) || 0,
         tabLen: parseFloat(/** @type {HTMLInputElement} */ ($('sTabLen')).value) || 3,
         topology: /** @type {any} */ (/** @type {HTMLSelectElement} */ ($('sTopo')).value),
+        smallHoleDia: parseFloat(/** @type {HTMLInputElement} */ ($('sSmallHole')).value) || 0,
+        smallHoleFactor: (parseFloat(/** @type {HTMLInputElement} */ ($('sSmallHolePct')).value) || 60) / 100,
         count: parseInt(/** @type {HTMLInputElement} */ ($('sCount')).value, 10) || 1,
         nestGap: parseFloat(/** @type {HTMLInputElement} */ ($('sNestGap')).value) || 6,
         sheetW: parseFloat(/** @type {HTMLInputElement} */ ($('sSheetW')).value) || 1220,

@@ -55,6 +55,20 @@ export async function sheetCutFromModel(model, opts = {}) {
     topology,                             // 'sheet' (o forzato 'sheet' se nesting)
   });
 
+  // REGOLA PLASMA: rallenta i FORI PICCOLI. Ad alta velocità l'arco "lagga" e il
+  // foro esce ovale/sottodimensionato → sotto una certa Ø si taglia più piano.
+  const smallHoleDia = opts.smallHoleDia ?? 0;              // 0 = regola disattivata
+  const smallHoleFactor = opts.smallHoleFactor ?? 0.6;      // % della velocità (SheetCam ~60%)
+  let slowed = 0;
+  if (smallHoleDia > 0) {
+    for (const c of cam.contours) {
+      if (!c.hole) continue;
+      let miX = Infinity, miY = Infinity, maX = -Infinity, maY = -Infinity;
+      for (const p of c.pts) { if (p.u < miX) miX = p.u; if (p.u > maX) maX = p.u; if (p.v < miY) miY = p.v; if (p.v > maY) maY = p.v; }
+      if (Math.max(maX - miX, maY - miY) <= smallHoleDia) { c.feed = Math.round(feed * smallHoleFactor); slowed++; }
+    }
+  }
+
   const post = postSheetCut(cam, {
     dialect, feed, thickness, power: opts.power,
     pierceMs: opts.pierceMs ?? preset.pierce * 1000,
@@ -74,6 +88,7 @@ export async function sheetCutFromModel(model, opts = {}) {
   let info = `${cam.contours.length} tagli (${cam.holes} fori · ${cam.sheet ? 'ritaglio sagoma' : 'fori'}) · `
     + `${(uMax - uMin).toFixed(0)}×${(vMax - vMin).toFixed(0)} mm · ${materialKey} ${thickness} mm · kerf ${kerf} mm · feed ${feed} mm/min`;
   if (opts.tabCount) info += ` · ${opts.tabCount} tab/pezzo (${opts.tabLen ?? 3} mm)`;
+  if (slowed) info += ` · ${slowed} fori piccoli @ ${Math.round(smallHoleFactor * 100)}%`;
   info += nestInfo;
   if (cam.skipped) info += ` · ⚠ ${cam.skipped} contorni < kerf saltati`;
 
