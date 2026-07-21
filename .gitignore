@@ -2,6 +2,11 @@ node_modules/
 .cache/
 desktop/dist/
 *.log
+
+# CHIAVE PRIVATA DI FIRMA LICENZE — non deve MAI essere committata/condivisa.
+# Chi la possiede può generare licenze valide. Tienine un backup offline separato.
+tools/license-private.jwk
+*.private.jwk
 .DS_Store
 Thumbs.db
 desktop.ini

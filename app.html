@@ -127,11 +127,13 @@
       <li>Rotary plasma: DXF/STEP &rarr; wrap, round &amp; rectangular tube, torch-follow Z</li>
       <li>All posts: LinuxCNC &middot; GRBL &middot; Cutlite &middot; <b>QtPlasmaC</b> + material files</li>
     </ul>
+    <div id="licenseActive" class="modal-info" hidden style="border-left:3px solid var(--accent,#39d353);padding-left:10px"></div>
     <div class="modal-grid">
-      <label style="grid-column:1/3">License key<input type="text" id="proKeyInput" placeholder="paste your Pro key (received after checkout)"></label>
+      <label style="grid-column:1/3">License key<input type="text" id="proKeyInput" placeholder="CF1-…  (paste the key you received after checkout)" autocomplete="off" spellcheck="false"></label>
     </div>
     <div class="modal-actions">
       <button id="upgradeCancel">Not now</button>
+      <button id="upgradeDeactivate" hidden>Deactivate</button>
       <button id="upgradeActivate">Activate</button>
       <button id="upgradeBuy" class="primary">&#128279; See pricing</button>
     </div>

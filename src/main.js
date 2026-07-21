@@ -26,7 +26,7 @@ import { sheetCutFromModel, sheetTextGcode } from './generator/sheetCut.js';  //
 import { estimateJob, reportText } from './generator/report.js';  // preventivo tempo/costo
 import { cutParamsFor, PLASMA_MATERIALS, materialEntries } from './generator/rotaryCut.js';   // preset plasma (kerf/feed/pierce) per lega+spessore
 import { materialFileForAlloy } from './generator/plasmacMaterial.js';   // export material file QtPlasmaC (.cfg)
-import { isPro, activatePro, PRICING_URL } from './license.js';   // gating Free/Pro (export = Pro)
+import { isPro, activate, deactivate, requireProNow, loadAndVerify, licenseInfo, PRICING_URL } from './license.js';   // licenze firmate ECDSA (export = Pro)
 import { MATERIALS, DEFAULT_MATERIAL, materialById, coatingColor } from './sim/materials.js';   // materiali + punta per materiale
 import { LaserTubeSim, outwardNormalAt } from './sim/lasertube.js';   // taglio LASER tubo (troncatura=stacco assiale)
 import { loadLaserHead, placeHead, placeHeadOriented, headScaleFor } from './sim/laserhead.js';
@@ -712,13 +712,13 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
   mat.addEventListener('change', applyPreset);
   rebuildThickness();
 
-  $('sheetMat').addEventListener('click', () => {
-    if (!requirePro('material file export')) return;
+  $('sheetMat').addEventListener('click', async () => {
+    if (!(await requirePro('material file export'))) return;
     const alloy = alloySel.value;
     const { text, count, alloy: label } = materialFileForAlloy(alloy);
     const fname = `${alloy}_material.cfg`;
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.href = URL.createObjectURL(new Blob([licenseStamp(fname) + text], { type: 'text/plain' }));
     a.download = fname; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     toast(`Material file QtPlasmaC: ${count} materiali (${label}) → ${fname}`, true);
@@ -865,13 +865,13 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
   // ⬇ Material file QtPlasmaC: kerf/feed/pierce/altezze per ogni spessore del
   // materiale, pronto da caricare nella config (M190 P<numero>). Dato di mercato:
   // non esiste un database ufficiale, si compila a mano dai cut chart.
-  $('rotaryMat').addEventListener('click', () => {
-    if (!requirePro('material file export')) return;
+  $('rotaryMat').addEventListener('click', async () => {
+    if (!(await requirePro('material file export'))) return;
     const alloy = /** @type {HTMLSelectElement} */ ($('rAlloy'))?.value || 'mild_steel';
     const { text, count, alloy: label } = materialFileForAlloy(alloy);
     const fname = `${alloy}_material.cfg`;
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.href = URL.createObjectURL(new Blob([licenseStamp(fname) + text], { type: 'text/plain' }));
     a.download = fname;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -939,26 +939,58 @@ $('btnSheetCut').addEventListener('click', () => { if (sheetSrc) $('sheetDlg').h
     }
   });
 })();
-// ---------- Free/Pro gating (l'export è Pro) ----------
-function openUpgrade() { $('upgradeDlg').hidden = false; }
-/** @returns {boolean} true se Pro; altrimenti apre l'upgrade e ritorna false */
-function requirePro(_feature) { if (isPro()) return true; openUpgrade(); return false; }
+// ---------- Free/Pro gating con LICENZE FIRMATE (l'export è Pro) ----------
+function openUpgrade() { renderLicense(); $('upgradeDlg').hidden = false; }
+/** Gate FORTE per l'export: ri-verifica crittograficamente il token ad ogni click
+ *  (niente flag di cui fidarsi). @returns {Promise<boolean>} */
+async function requirePro(_feature) { if (await requireProNow()) return true; openUpgrade(); return false; }
 function updateProBadge() {
   const b = $('btnPro');
   const pro = isPro();
   b.innerHTML = pro ? '&#9889; Pro' : '&#9889; Upgrade';
   b.classList.toggle('active', pro);
 }
+/** Mostra nel dialog a chi è intestata la licenza / scadenza, o l'input di attivazione. */
+function renderLicense() {
+  const info = licenseInfo();
+  const box = $('licenseActive');
+  if (info) {
+    const exp = info.exp ? `expires ${new Date(info.exp * 1000).toISOString().slice(0, 10)}` : 'no expiry (lifetime)';
+    box.innerHTML = `&#9989; <b>Pro active</b> &mdash; licensed to <b>${escapeHtml(info.email)}</b> · ${info.plan} · ${exp}`;
+    box.hidden = false;
+    $('upgradeDeactivate').hidden = false;
+    /** @type {HTMLInputElement} */ ($('proKeyInput')).value = '';
+  } else {
+    box.hidden = true;
+    $('upgradeDeactivate').hidden = true;
+  }
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+/** Filigrana licenza nell'header dei file esportati: traccia l'email dell'acquirente, così
+ *  una chiave condivisa è riconducibile a chi l'ha comprata. Commento valido per il formato
+ *  (.cfg material file = '#', G-code = '( )', standard RS274/QtPlasmaC). */
+function licenseStamp(filename) {
+  const info = licenseInfo();
+  if (!info) return '';
+  const ext = String(filename || '').split('.').pop().toLowerCase();
+  const line = `CamForge Pro — licensed to ${info.email} — ${info.plan}`;
+  return ext === 'cfg' ? `# ${line}\n` : `(${line})\n`;
+}
 $('btnPro').addEventListener('click', openUpgrade);
 $('upgradeCancel').addEventListener('click', () => { $('upgradeDlg').hidden = true; });
 $('upgradeDlg').addEventListener('click', (e) => { if (e.target === $('upgradeDlg')) $('upgradeDlg').hidden = true; });
 $('upgradeBuy').addEventListener('click', () => window.open(PRICING_URL, '_blank'));
-$('upgradeActivate').addEventListener('click', () => {
+$('upgradeActivate').addEventListener('click', async () => {
   const k = /** @type {HTMLInputElement} */ ($('proKeyInput')).value;
-  if (activatePro(k)) { updateProBadge(); $('upgradeDlg').hidden = true; toast('Pro activated — export unlocked ✓', true); }
-  else toast('Enter a valid license key');
+  const r = await activate(k);
+  if (r.valid) { updateProBadge(); renderLicense(); $('upgradeDlg').hidden = true; toast('Pro activated — export unlocked ✓', true); }
+  else toast(r.reason === 'scaduta' ? 'License expired — renew to keep exporting' : 'Invalid license key');
 });
-updateProBadge();
+$('upgradeDeactivate').addEventListener('click', () => {
+  deactivate(); updateProBadge(); renderLicense(); toast('License removed on this device');
+});
+// all'avvio: verifica crittografica del token salvato, poi aggiorna badge/UI
+loadAndVerify().then(() => { updateProBadge(); renderLicense(); }).catch(() => updateProBadge());
 
 $('btnFit').addEventListener('click', () => viewer.fit());
 $('btnStock').addEventListener('click', () => setStockMode(!stockOn));
@@ -1092,11 +1124,11 @@ $('btnGenNc').addEventListener('click', async () => {
   }
 });
 
-$('btnDlNc').addEventListener('click', () => {
+$('btnDlNc').addEventListener('click', async () => {
   if (!lastGen) return;
-  if (!requirePro('G-code export')) return;
+  if (!(await requirePro('G-code export'))) return;
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([lastGen.text], { type: 'text/plain' }));
+  a.href = URL.createObjectURL(new Blob([licenseStamp(lastGen.name) + lastGen.text], { type: 'text/plain' }));
   a.download = lastGen.name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -1192,8 +1224,8 @@ async function loadDemo() {
 }
 
 // hook per test automatizzati (preview/console)
-/** @type {any} */ (window).__loadText = loadText;
-/** @type {any} */ (window).__getModel = () => model;
+/** @type {any} */ (window).__loadText = loadText;   // usato dal guscio Electron (apri file) — NON rimuovere
+// (rimosso window.__getModel: esponeva l'intero G-code a un one-liner di console → esfiltrazione dell'export)
 /** @type {any} */ (window).__viewer = viewer;
 
 // avvio: ?file=percorso/relativo carica un file servito dal server, altrimenti demo
