@@ -138,6 +138,34 @@ export function parseDXF(text, fileName = '') {
   };
   const vals = (data, code) => data.filter(([c]) => c === code).map(([, v]) => parseFloat(v));
 
+  // Entità OCS (coordinate nel piano dell'oggetto): la loro geometria va portata in WCS
+  // con l'extrusion (210/220/230). LINE/SPLINE/ELLIPSE sono già WCS → NON toccarle.
+  const OCS_TYPES = new Set(['CIRCLE', 'ARC', 'LWPOLYLINE', 'POLYLINE']);
+  /**
+   * Arbitrary Axis Algorithm (AutoCAD): OCS → WCS dall'extrusion. Ritorna una matrice
+   * affine [a,b,c,d,e,f] (o null se extrusion di default (0,0,1)). SENZA questo, le parti
+   * SPECCHIATE (extrusion (0,0,-1)) o disegnate in un UCS importano storte IN SILENZIO
+   * (un taglio all'apparenza valido ma sbagliato). Elevazione (38/30) inclusa.
+   * @param {[number,string][]} data
+   */
+  function ocsMatrix(data) {
+    let nx = val(data, 210, null), ny = val(data, 220, null), nz = val(data, 230, null);
+    if (nx === null && ny === null && nz === null) return null;         // niente extrusion → default
+    nx = nx ?? 0; ny = ny ?? 0; nz = nz ?? 1;
+    const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+    if (Math.abs(nx) < 1e-9 && Math.abs(ny) < 1e-9 && Math.abs(nz - 1) < 1e-9) return null;   // già WCS
+    // asse X arbitrario (soglia 1/64 come da spec)
+    let ax, ay, az;
+    if (Math.abs(nx) < 1 / 64 && Math.abs(ny) < 1 / 64) { ax = nz; ay = 0; az = -nx; }  // Wy × N
+    else { ax = -ny; ay = nx; az = 0; }                                                  // Wz × N
+    const al = Math.hypot(ax, ay, az) || 1; ax /= al; ay /= al; az /= al;
+    // asse Y = N × Ax
+    let bx = ny * az - nz * ay, by = nz * ax - nx * az, bz = nx * ay - ny * ax;
+    const bl = Math.hypot(bx, by, bz) || 1; bx /= bl; by /= bl; bz /= bl;
+    const elev = val(data, 38, null) ?? val(data, 30, 0) ?? 0;         // elevazione OCS
+    return [ax, ay, bx, by, elev * nx, elev * ny];                     // WCS.xy = px·Ax + py·Ay + elev·N
+  }
+
   /** Emette una polilinea (in coordinate già trasformate, unità disegno). */
   function emitPolyline(pts, layer, line) {
     const tool = toolOf(layer);
@@ -158,7 +186,11 @@ export function parseDXF(text, fileName = '') {
   function emitEntity(ent, m, depth) {
     if (val(ent.data, 67, 0) === 1) return;   // spazio carta: non è geometria del pezzo
     const layer = str(ent.data, 8, '0');
-    const T = (x, y) => apply(m, x, y);
+    // porta le entità OCS (cerchi/archi/polilinee) in WCS via l'extrusion, PRIMA del
+    // trasform di blocco/INSERT: risolve le parti specchiate/UCS importate storte.
+    const ocs = OCS_TYPES.has(ent.type) ? ocsMatrix(ent.data) : null;
+    const mm = ocs ? mul(m, ocs) : m;
+    const T = (x, y) => apply(mm, x, y);
 
     switch (ent.type) {
       case 'LINE': {
@@ -273,7 +305,9 @@ export function parseDXF(text, fileName = '') {
             bulge: val(list[j].data, 42, 0) || 0,
           });
         }
-        emitPolyline(bulgePolyline(verts, closed).map(([x, y]) => apply(m, x, y)),
+        const ocs = ocsMatrix(ent.data);           // POLYLINE 2D è OCS come LWPOLYLINE
+        const mm = ocs ? mul(m, ocs) : m;
+        emitPolyline(bulgePolyline(verts, closed).map(([x, y]) => apply(mm, x, y)),
           str(ent.data, 8, '0'), ent.line);
         entityCount++;
         i = j;
